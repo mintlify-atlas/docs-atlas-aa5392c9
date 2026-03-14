@@ -1,0 +1,67 @@
+---
+title: 'Get Token Prices'
+api: 'GET /api/prices'
+description: 'Retrieve current USD prices for all supported tokens'
+---
+
+## Authentication
+
+This endpoint does not require authentication.
+
+## Response
+
+Returns a mapping of token symbols to their current USD prices.
+
+<ResponseField name="[symbol]" type="number">
+  USD price for the token. Key is the token symbol (e.g., "ETH", "USDC", "MATIC")
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.walty.com/api/prices"
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.walty.com/api/prices');
+const prices = await response.json();
+console.log(prices.ETH); // Current ETH price
+```
+
+```python Python
+import requests
+
+response = requests.get('https://api.walty.com/api/prices')
+prices = response.json()
+print(f"ETH price: ${prices['ETH']}")
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "ETH": 3000.50,
+  "USDC": 1.0,
+  "USDT": 0.9998,
+  "DAI": 1.0001,
+  "WETH": 3000.50,
+  "MATIC": 0.85,
+  "WBTC": 65000.0,
+  "UNI": 12.50,
+  "LINK": 18.75
+}
+```
+
+## Caching
+
+Price data is cached server-side for 30 seconds to optimize performance and reduce external API calls.
+
+<Note>
+  Prices are fetched from CoinGecko and deduplicated across chains. Multi-chain tokens (like USDC on Ethereum and Polygon) share the same price based on their CoinGecko ID.
+</Note>
+
+<Warning>
+  If the price fetch fails, this endpoint returns the last cached prices. An empty object `{}` is returned if no cache exists.
+</Warning>

@@ -1,0 +1,596 @@
+---
+title: Installation
+description: Detailed installation instructions with all deployment options
+---
+
+## Overview
+
+Walty is designed to be self-hosted using Docker. The recommended setup uses Docker Compose to orchestrate the Next.js application and PostgreSQL database. Database migrations run automatically on container startup.
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Docker & Docker Compose" icon="docker">
+    Docker 20.10+ and Docker Compose V2
+  </Card>
+  
+  <Card title="Git" icon="git">
+    For cloning the repository
+  </Card>
+  
+  <Card title="API Keys" icon="key">
+    Alchemy and 0x API keys (free tier available)
+  </Card>
+  
+  <Card title="System Resources" icon="server">
+    2GB RAM minimum, 10GB disk space
+  </Card>
+</CardGroup>
+
+## Docker Deployment
+
+### Standard Setup
+
+The standard Docker Compose setup includes both the application and database:
+
+<Steps>
+  <Step title="Clone Repository">
+    ```bash
+    git clone https://github.com/ignaciogarcia-dev/walty.git
+    cd walty
+    ```
+  </Step>
+  
+  <Step title="Configure Environment">
+    Copy and edit the environment file:
+    
+    ```bash
+    cp .env.example .env
+    ```
+    
+    Edit `.env` with your configuration (see [Environment Variables](#environment-variables) below).
+  </Step>
+  
+  <Step title="Generate Secrets">
+    Generate secure secrets for JWT and server pepper:
+    
+    ```bash
+    # Generate JWT_SECRET
+    openssl rand -base64 32
+    
+    # Generate SERVER_PEPPER
+    openssl rand -base64 32
+    ```
+    
+    Add these values to your `.env` file.
+  </Step>
+  
+  <Step title="Start Services">
+    ```bash
+    docker compose up --build
+    ```
+    
+    The application will be available at `http://localhost:3000`.
+  </Step>
+</Steps>
+
+### Docker Compose Configuration
+
+The `docker-compose.yml` file defines two services:
+
+```yaml docker-compose.yml
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    environment:
+      - CI=true
+
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: wallet
+      POSTGRES_DB: wallet
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+<Note>
+  Database data is persisted in the `postgres_data` Docker volume, so your data survives container restarts.
+</Note>
+
+### Application Startup Sequence
+
+The application container follows this startup sequence (defined in `entrypoint.sh`):
+
+1. **Wait for Database**: Polls PostgreSQL until it accepts connections
+2. **Run Migrations**: Executes `pnpm drizzle-kit push` to sync database schema
+3. **Start Application**: Launches the Next.js application with `pnpm start`
+
+```bash entrypoint.sh
+#!/bin/sh
+set -e
+
+echo "Waiting for database..."
+# Database connection polling logic
+
+echo "Running DB migrations..."
+if pnpm drizzle-kit push; then
+  echo "✓ Database schema synchronized"
+  echo "Database ready"
+else
+  echo "✗ Migration failed"
+  exit 1
+fi
+
+echo "Starting app..."
+exec pnpm start
+```
+
+## Environment Variables
+
+### Required Variables
+
+These variables **must** be set for Walty to function:
+
+<AccordionGroup>
+  <Accordion title="DATABASE_URL">
+    PostgreSQL connection string
+    
+    **Docker Compose**:
+    ```bash
+    DATABASE_URL=postgresql://wallet:wallet@db:5432/wallet
+    ```
+    
+    **External Database**:
+    ```bash
+    DATABASE_URL=postgresql://user:password@host:5432/dbname
+    ```
+    
+    <Note>
+      When using Docker Compose, `db` is the hostname of the PostgreSQL service.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="JWT_SECRET">
+    Secret used to sign and verify JSON Web Tokens for authentication
+    
+    ```bash
+    # Generate with:
+    openssl rand -base64 32
+    
+    # Then set in .env:
+    JWT_SECRET=your-generated-secret-here
+    ```
+    
+    <Warning>
+      Never use the example value in production. Generate a unique secret for each deployment.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="SERVER_PEPPER">
+    HMAC key for deriving the PIN challenge used in server-side wallet backup encryption
+    
+    ```bash
+    # Generate with:
+    openssl rand -base64 32
+    
+    # Then set in .env:
+    SERVER_PEPPER=your-generated-pepper-here
+    ```
+    
+    <Warning>
+      Changing this value will invalidate all existing encrypted wallet backups.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="ALCHEMY_API_KEY">
+    Alchemy API key for multichain RPC access (Ethereum, Arbitrum, Base, Optimism, Polygon)
+    
+    ```bash
+    ALCHEMY_API_KEY=your-alchemy-api-key
+    ```
+    
+    **Get a free key**: [alchemy.com](https://www.alchemy.com/)
+    
+    <Warning>
+      Without this key, balance fetching and transactions will fail. Public RPCs are unreliable and not used as primary endpoints.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="ZEROX_API_KEY">
+    0x API key for token swap functionality
+    
+    ```bash
+    ZEROX_API_KEY=your-0x-api-key
+    ```
+    
+    **Get a free key**: [0x.org/docs/api](https://0x.org/docs/api)
+    
+    <Note>
+      Without this key, swap calls will fail with 401 errors. Token swaps will not work.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+### Optional Variables
+
+These variables enhance functionality but Walty degrades gracefully if missing:
+
+<AccordionGroup>
+  <Accordion title="ANKR_API_KEY">
+    Ankr API key for multichain RPC fallback (between Alchemy and public RPCs)
+    
+    ```bash
+    ANKR_API_KEY=your-ankr-api-key
+    ```
+    
+    **Get a key**: [ankr.com/rpc](https://www.ankr.com/rpc/)
+    
+    Without this key, Ankr is skipped and free public endpoints are used as fallback.
+  </Accordion>
+  
+  <Accordion title="ONEINCH_API_KEY">
+    1inch API key for swap fallback and quote comparison
+    
+    ```bash
+    ONEINCH_API_KEY=your-1inch-api-key
+    ```
+    
+    **Get a key**: [portal.1inch.dev](https://portal.1inch.dev/)
+    
+    Without this key, only 0x is used for swaps.
+  </Accordion>
+  
+  <Accordion title="COINGECKO_API_KEY">
+    CoinGecko API key for token prices and metadata
+    
+    ```bash
+    COINGECKO_API_KEY=your-coingecko-api-key
+    ```
+    
+    **Get a key**: [coingecko.com/en/api](https://www.coingecko.com/en/api)
+    
+    Without this key, the app works but with stricter rate limits on the free tier.
+  </Accordion>
+  
+  <Accordion title="COINGECKO_API_BASE_URL">
+    Override CoinGecko base URL (rarely needed)
+    
+    ```bash
+    COINGECKO_API_BASE_URL=https://api.coingecko.com/api/v3
+    ```
+    
+    Only needed if using a CoinGecko proxy or alternative endpoint.
+  </Accordion>
+  
+  <Accordion title="COOKIE_SECURE">
+    Force the Secure flag on JWT cookies (useful for local HTTPS development)
+    
+    ```bash
+    COOKIE_SECURE=true
+    ```
+    
+    If not set, Secure is only applied when `NODE_ENV=production`.
+  </Accordion>
+  
+  <Accordion title="PAYMENTS_RECONCILE_SECRET">
+    Secret used by the internal payment reconciler endpoint
+    
+    ```bash
+    # Generate with:
+    openssl rand -base64 32
+    
+    # Then set in .env:
+    PAYMENTS_RECONCILE_SECRET=your-generated-secret
+    ```
+    
+    The external cron must send this in the `x-reconcile-secret` header.
+  </Accordion>
+</AccordionGroup>
+
+### Automatic Variables
+
+- **NODE_ENV**: Set automatically by Next.js (`development` or `production`)
+- **NEXT_PUBLIC_RPC_URL**: Reserved for future use, not currently utilized
+
+## Production Deployment
+
+### Security Best Practices
+
+<Steps>
+  <Step title="Use Strong Secrets">
+    Generate cryptographically secure secrets:
+    
+    ```bash
+    openssl rand -base64 32  # JWT_SECRET
+    openssl rand -base64 32  # SERVER_PEPPER
+    openssl rand -base64 32  # PAYMENTS_RECONCILE_SECRET
+    ```
+  </Step>
+  
+  <Step title="Enable HTTPS">
+    Use a reverse proxy (nginx, Caddy, Traefik) with SSL/TLS:
+    
+    ```nginx nginx.conf
+    server {
+      listen 443 ssl http2;
+      server_name wallet.yourdomain.com;
+      
+      ssl_certificate /path/to/cert.pem;
+      ssl_certificate_key /path/to/key.pem;
+      
+      location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+      }
+    }
+    ```
+    
+    Then set `COOKIE_SECURE=true` in your `.env`.
+  </Step>
+  
+  <Step title="Secure Database">
+    For production, use:
+    - Strong PostgreSQL password
+    - Database firewall rules
+    - Regular automated backups
+    
+    ```bash
+    # Backup command
+    docker compose exec db pg_dump -U wallet wallet > backup.sql
+    ```
+  </Step>
+  
+  <Step title="Configure API Keys">
+    Set up production API keys with appropriate rate limits:
+    - Alchemy: Use production tier if needed
+    - 0x: Monitor usage and upgrade if necessary
+    - CoinGecko: Consider paid tier for higher limits
+  </Step>
+  
+  <Step title="Set Up Monitoring">
+    Monitor application health:
+    
+    ```bash
+    # View logs
+    docker compose logs -f app
+    
+    # Monitor resources
+    docker stats
+    
+    # Check service status
+    docker compose ps
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Never commit `.env` files to version control. Keep secrets secure and rotate them regularly.
+</Warning>
+
+## Database Management
+
+### Migrations
+
+Migrations run automatically via `entrypoint.sh`, but you can run them manually:
+
+```bash
+# Run migrations
+docker compose exec app pnpm db:migrate
+
+# Open Drizzle Studio (database GUI)
+docker compose exec app pnpm db:studio
+```
+
+### Backup and Restore
+
+<CodeGroup>
+```bash Backup
+# Create backup
+docker compose exec db pg_dump -U wallet wallet > backup-$(date +%Y%m%d).sql
+
+# Verify backup
+ls -lh backup-*.sql
+```
+
+```bash Restore
+# Stop application
+docker compose stop app
+
+# Restore database
+cat backup-20260314.sql | docker compose exec -T db psql -U wallet wallet
+
+# Restart application
+docker compose start app
+```
+
+```bash Reset Database
+# WARNING: This deletes all data
+docker compose down -v
+docker compose up --build
+```
+</CodeGroup>
+
+## Troubleshooting
+
+### Common Issues
+
+<AccordionGroup>
+  <Accordion title="Port conflicts">
+    If port 3000 or 5432 is already in use:
+    
+    **Option 1**: Stop conflicting service
+    
+    **Option 2**: Change ports in `docker-compose.yml`:
+    ```yaml
+    app:
+      ports:
+        - "3001:3000"  # Use different external port
+    ```
+  </Accordion>
+  
+  <Accordion title="Database connection failures">
+    1. Check database is running: `docker compose ps`
+    2. Verify `DATABASE_URL` matches compose config
+    3. Check database logs: `docker compose logs db`
+    4. Ensure database is ready before app starts (handled by `entrypoint.sh`)
+  </Accordion>
+  
+  <Accordion title="Migration errors">
+    If migrations fail:
+    
+    ```bash
+    # View migration logs
+    docker compose logs app | grep -A 10 "Running DB migrations"
+    
+    # Reset and retry
+    docker compose down -v
+    docker compose up --build
+    
+    # Manual migration
+    docker compose exec app pnpm db:migrate
+    ```
+  </Accordion>
+  
+  <Accordion title="API key issues">
+    Symptoms:
+    - Cannot fetch balances: Missing `ALCHEMY_API_KEY`
+    - Swap errors: Missing `ZEROX_API_KEY`
+    - Rate limit errors: Add `COINGECKO_API_KEY`
+    
+    Verify keys are set:
+    ```bash
+    docker compose exec app env | grep -E '(ALCHEMY|ZEROX|COINGECKO)'
+    ```
+    
+    After updating `.env`:
+    ```bash
+    docker compose restart app
+    ```
+  </Accordion>
+  
+  <Accordion title="Build failures">
+    Common causes:
+    - Docker cache issues: `docker compose build --no-cache`
+    - Disk space: `docker system prune -a`
+    - Network issues: Check internet connection for npm packages
+    
+    Clean rebuild:
+    ```bash
+    docker compose down
+    docker compose build --no-cache
+    docker compose up
+    ```
+  </Accordion>
+  
+  <Accordion title="Container exits immediately">
+    Check logs for errors:
+    ```bash
+    docker compose logs app
+    ```
+    
+    Common causes:
+    - Missing required environment variables
+    - Database not accessible
+    - Migration failures
+    - Port conflicts
+  </Accordion>
+</AccordionGroup>
+
+### Health Checks
+
+Verify your installation:
+
+```bash
+# Check all services are running
+docker compose ps
+
+# Test database connection
+docker compose exec db psql -U wallet wallet -c "SELECT 1;"
+
+# Check application logs
+docker compose logs --tail=50 app
+
+# Verify app is responding
+curl http://localhost:3000
+
+# Check resource usage
+docker stats --no-stream
+```
+
+## Maintenance
+
+### Updates
+
+To update Walty to the latest version:
+
+```bash
+# Pull latest code
+git pull origin main
+
+# Rebuild and restart
+docker compose down
+docker compose up --build
+```
+
+### Log Management
+
+```bash
+# View logs
+docker compose logs -f app
+
+# Export logs to file
+docker compose logs app > walty-logs.txt
+
+# Clear logs (restart containers)
+docker compose restart
+```
+
+### Performance Tuning
+
+For production deployments:
+
+1. **Increase PostgreSQL resources** if needed:
+   ```yaml
+   db:
+     deploy:
+       resources:
+         limits:
+           memory: 2G
+           cpus: '1.0'
+   ```
+
+2. **Enable PostgreSQL connection pooling** for high traffic
+
+3. **Use CDN** for static assets in production
+
+4. **Monitor** database query performance with `pnpm db:studio`
+
+## Getting Help
+
+If you encounter issues:
+
+1. Check the [GitHub Issues](https://github.com/ignaciogarcia-dev/walty/issues)
+2. Review application logs: `docker compose logs -f app`
+3. Open a new issue with:
+   - Error messages from logs
+   - Docker Compose version: `docker compose version`
+   - Environment (without sensitive values)
+
+<Note>
+  Walty follows an issue-first contribution model. Check existing issues or open a new one before submitting PRs.
+</Note>

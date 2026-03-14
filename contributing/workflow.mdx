@@ -1,0 +1,273 @@
+---
+title: Contribution Workflow
+description: Learn about the issue-first workflow, PR process, and review guidelines for Walty
+---
+
+Walty follows an issue-first workflow to keep collaboration open, clear, and manageable for both contributors and maintainers.
+
+## Guiding Principles
+
+Our contribution workflow is based on these core principles:
+
+- **Keep scope small and reviewable** - Focus on one thing at a time
+- **One issue, one pull request** - Each PR should address a single issue
+- **Document decisions** - Keep context in issues so others can follow along
+- **Predictable behavior** - Prioritize stability over speed
+
+## Issue-First Workflow
+
+<Warning>
+  Direct PRs without an issue may be closed and redirected to issue discussion first. Always open or claim an issue before starting work.
+</Warning>
+
+### Before You Start Coding
+
+For anything beyond tiny typo or documentation fixes:
+
+<Steps>
+  <Step title="Open or find an issue">
+    - Browse [existing issues](https://github.com/ignaciogarcia-dev/walty/issues)
+    - Or create a new issue using one of the templates:
+      - **Bug report** - For reporting bugs
+      - **Feature request** - For proposing new features
+      - **Contribution proposal** - For larger changes or refactors
+  </Step>
+
+  <Step title="Wait for scope confirmation">
+    For large features or refactor work, wait for maintainer feedback on the issue to confirm:
+    
+    - The approach aligns with project goals
+    - The scope is well-defined
+    - No duplicate work is happening
+  </Step>
+
+  <Step title="Claim the issue">
+    Comment on the issue that you're working on it to avoid duplicated effort:
+    
+    > I'd like to work on this issue.
+  </Step>
+</Steps>
+
+## The Contribution Process
+
+Once you have an issue to work on:
+
+<Steps>
+  <Step title="Create a branch">
+    Create a branch from `main` following the naming convention:
+    
+    ```bash
+    git checkout -b fix/123-short-description
+    ```
+    
+    Branch naming suggestions:
+    - `fix/123-short-description` - For bug fixes
+    - `feat/456-short-description` - For new features
+    - `docs/789-short-description` - For documentation
+  </Step>
+
+  <Step title="Implement the change">
+    Make your changes following the [guidelines](/contributing/guidelines).
+    
+    Keep your implementation focused on the issue scope.
+  </Step>
+
+  <Step title="Align on acceptance criteria">
+    Before finalizing, make sure your implementation:
+    
+    - Addresses the acceptance criteria discussed in the issue
+    - Includes necessary tests (if applicable)
+    - Updates relevant documentation
+  </Step>
+
+  <Step title="Open a pull request">
+    Push your branch and open a PR. See the [PR requirements](#pull-request-requirements) below.
+  </Step>
+
+  <Step title="Address review feedback">
+    - Respond to reviewer comments
+    - Make requested changes in follow-up commits
+    - Update docs and tests as needed
+  </Step>
+</Steps>
+
+## Pull Request Requirements
+
+Each PR should include:
+
+<AccordionGroup>
+  <Accordion title="Linked issue number">
+    Link your PR to the issue using GitHub keywords:
+    
+    ```markdown
+    Closes #123
+    ```
+    
+    Or:
+    
+    ```markdown
+    Fixes #123
+    ```
+    
+    This automatically closes the issue when the PR is merged.
+  </Accordion>
+
+  <Accordion title="Clear summary">
+    Explain:
+    - What changed
+    - Why it changed
+    - Any important implementation details
+  </Accordion>
+
+  <Accordion title="Validation notes">
+    Document what checks you performed:
+    
+    ```markdown
+    ## Validation
+    
+    - [x] `pnpm lint` passes
+    - [x] `pnpm build` succeeds
+    - [x] Manually tested the feature
+    - [x] Checked for edge cases
+    ```
+  </Accordion>
+
+  <Accordion title="Screenshots or video (for UI changes)">
+    For any user-facing changes:
+    
+    - Add before/after screenshots
+    - Or include a short screen recording
+    - Show the feature working end-to-end
+  </Accordion>
+
+  <Accordion title="Documentation updates">
+    If your change affects:
+    
+    - User workflows or behavior
+    - API interfaces
+    - Configuration options
+    
+    Update the relevant documentation in the same PR.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Keep PRs focused. Large mixed-scope PRs are harder to review and may be split before merge.
+</Note>
+
+## Commit Conventions
+
+Write clear, scoped commit messages:
+
+```bash
+fix(send): handle invalid recipient resolution
+```
+
+```bash
+docs(readme): clarify issue-first contribution flow
+```
+
+```bash
+feat(portfolio): add multi-chain balance support
+```
+
+Format: `type(scope): description`
+
+- **type**: `fix`, `feat`, `docs`, `refactor`, `test`, `chore`
+- **scope**: The area affected (e.g., `send`, `portfolio`, `swap`)
+- **description**: What changed in imperative mood
+
+## Review and Merge Policy
+
+Maintainers review PRs for:
+
+- **Behavior** - Does it work as intended?
+- **Safety** - Are there security or data integrity concerns?
+- **Clarity** - Is the code readable and maintainable?
+- **Scope alignment** - Does it match what was discussed in the issue?
+
+### Review Process
+
+<Steps>
+  <Step title="Initial review">
+    A maintainer will review your PR and either:
+    - Approve it
+    - Request changes
+    - Ask questions for clarification
+  </Step>
+
+  <Step title="Address feedback">
+    Make requested changes in follow-up commits. Don't force-push unless asked.
+  </Step>
+
+  <Step title="Final approval">
+    Once all feedback is addressed, the PR will be approved.
+  </Step>
+
+  <Step title="Merge">
+    PRs are merged when they meet issue scope and quality checks.
+  </Step>
+</Steps>
+
+## Good First Contributions
+
+If you're new to the project, start with:
+
+- **`good first issue` labels** - Issues marked as beginner-friendly
+- **Documentation improvements** - Help make the docs clearer
+- **UI polish and copy fixes** - Small improvements to user experience
+- **Small bug fixes** - Issues with clear reproduction steps
+
+These help you get familiar with the codebase and contribution process before tackling larger features.
+
+## Proposing New Work
+
+When opening a proposal for new features or significant changes:
+
+<Steps>
+  <Step title="Explain the user problem">
+    Start with the problem you're solving, not the solution.
+    
+    > Users can't easily track their transaction history across multiple chains.
+  </Step>
+
+  <Step title="Define scope">
+    Be clear about what's in scope and what's not:
+    
+    **In scope:**
+    - Transaction history for Ethereum and Polygon
+    - Basic filtering by date and type
+    
+    **Out of scope:**
+    - Advanced analytics
+    - Export functionality (future work)
+  </Step>
+
+  <Step title="Share rollout plan">
+    How will you validate the changes?
+    
+    - Manual testing steps
+    - Edge cases to check
+    - Performance considerations
+  </Step>
+
+  <Step title="Mention risks">
+    What could go wrong?
+    
+    - Backward compatibility impact
+    - Performance concerns
+    - Security considerations
+  </Step>
+</Steps>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Getting Started" icon="rocket" href="/contributing/getting-started">
+    Set up your development environment
+  </Card>
+  
+  <Card title="Guidelines" icon="book" href="/contributing/guidelines">
+    Code standards and testing requirements
+  </Card>
+</CardGroup>

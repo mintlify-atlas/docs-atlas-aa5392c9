@@ -1,0 +1,163 @@
+---
+title: 'Get Portfolio Balances'
+api: 'GET /api/portfolio'
+description: 'Retrieve token positions and total portfolio value for a wallet address'
+---
+
+## Authentication
+
+This endpoint requires authentication. Include your session token in the request headers.
+
+## Query Parameters
+
+<ParamField query="address" type="string" required>
+  The wallet address to fetch portfolio balances for
+</ParamField>
+
+## Response
+
+<ResponseField name="positions" type="array">
+  Array of token positions across all supported chains
+  
+  <ResponseField name="token" type="object">
+    Token metadata object
+    
+    <ResponseField name="symbol" type="string">
+      Token symbol (e.g., "USDC", "ETH")
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Full token name
+    </ResponseField>
+    
+    <ResponseField name="address" type="string">
+      Token contract address
+    </ResponseField>
+    
+    <ResponseField name="decimals" type="number">
+      Number of decimal places
+    </ResponseField>
+    
+    <ResponseField name="coingeckoId" type="string">
+      CoinGecko identifier for pricing
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="chainId" type="number">
+    Chain ID where the token balance exists
+  </ResponseField>
+  
+  <ResponseField name="balance" type="string">
+    Human-readable token balance (formatted with decimals)
+  </ResponseField>
+  
+  <ResponseField name="priceUsd" type="number">
+    Current USD price per token
+  </ResponseField>
+  
+  <ResponseField name="valueUsd" type="number">
+    Total USD value of this position (balance × price)
+  </ResponseField>
+  
+  <ResponseField name="allocation" type="number">
+    Percentage of total portfolio value (0-100)
+  </ResponseField>
+  
+  <ResponseField name="imageUrl" type="string | null">
+    URL to token logo image
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="totalUsd" type="number">
+  Total portfolio value in USD across all positions
+</ResponseField>
+
+<ResponseField name="userId" type="string">
+  Authenticated user's ID
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.walty.com/api/portfolio?address=0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb" \
+  -H "Cookie: session=your_session_token"
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'https://api.walty.com/api/portfolio?address=0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+  {
+    headers: {
+      'Cookie': 'session=your_session_token'
+    }
+  }
+);
+const data = await response.json();
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "positions": [
+    {
+      "token": {
+        "symbol": "USDC",
+        "name": "USD Coin",
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "decimals": 6,
+        "coingeckoId": "usd-coin"
+      },
+      "chainId": 1,
+      "balance": "1250.50",
+      "priceUsd": 1.0,
+      "valueUsd": 1250.50,
+      "allocation": 62.5,
+      "imageUrl": "https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png"
+    },
+    {
+      "token": {
+        "symbol": "ETH",
+        "name": "Ethereum",
+        "address": null,
+        "decimals": 18,
+        "coingeckoId": "ethereum"
+      },
+      "chainId": 1,
+      "balance": "0.25",
+      "priceUsd": 3000.0,
+      "valueUsd": 750.0,
+      "allocation": 37.5,
+      "imageUrl": "https://assets.coingecko.com/coins/images/279/small/ethereum.png"
+    }
+  ],
+  "totalUsd": 2000.50,
+  "userId": "user_abc123"
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message
+</ResponseField>
+
+<CodeGroup>
+```json 400 Bad Request
+{
+  "error": "Missing address"
+}
+```
+
+```json 401 Unauthorized
+{
+  "error": "Unauthorized"
+}
+```
+</CodeGroup>
+
+<Note>
+  The `balanceRaw` field (bigint type) is stripped from the response as it's not JSON-serializable. Use the formatted `balance` string instead.
+</Note>

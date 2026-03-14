@@ -1,0 +1,343 @@
+---
+title: Contribution Guidelines
+description: Code standards, commit conventions, testing requirements, and community expectations
+---
+
+These guidelines help maintain code quality and consistency across the Walty project.
+
+## Code Style and Linting
+
+Walty uses ESLint to maintain code quality and consistency.
+
+### Running the Linter
+
+Before opening a pull request, always run:
+
+```bash
+pnpm lint
+```
+
+Fix any errors or warnings before submitting your PR.
+
+<Note>
+  The linter configuration is set up with `eslint-config-next` for Next.js best practices.
+</Note>
+
+### Code Style Expectations
+
+- **Consistent formatting** - Follow the existing code style in the file you're editing
+- **Clear variable names** - Use descriptive names that explain purpose
+- **Small functions** - Keep functions focused on a single responsibility
+- **Comments for complexity** - Add comments when logic is not immediately obvious
+
+## Commit Conventions
+
+Write clear, scoped commit messages that help others understand the change.
+
+### Format
+
+```
+type(scope): description
+```
+
+### Examples
+
+```bash
+fix(send): handle invalid recipient resolution
+```
+
+```bash
+feat(portfolio): add multi-chain balance support
+```
+
+```bash
+docs(readme): clarify issue-first contribution flow
+```
+
+```bash
+refactor(swap): simplify quote validation logic
+```
+
+### Commit Types
+
+- **fix** - Bug fixes
+- **feat** - New features
+- **docs** - Documentation changes
+- **refactor** - Code changes that neither fix bugs nor add features
+- **test** - Adding or updating tests
+- **chore** - Maintenance tasks, dependency updates
+
+### Commit Scope
+
+The scope should indicate the area affected:
+
+- `send` - Send/transfer functionality
+- `portfolio` - Portfolio and balance features
+- `swap` - Token swap functionality
+- `auth` - Authentication
+- `db` - Database changes
+- `ui` - UI components
+- `readme`, `docs` - Documentation
+
+### Writing Good Commit Messages
+
+<AccordionGroup>
+  <Accordion title="Use imperative mood">
+    Write as if giving a command:
+    
+    - **Good**: `fix: handle invalid recipient`
+    - **Bad**: `fix: handled invalid recipient`
+  </Accordion>
+
+  <Accordion title="Keep it concise">
+    The description should be brief but clear:
+    
+    - **Good**: `feat(swap): add slippage tolerance setting`
+    - **Bad**: `feat(swap): add a new feature that allows users to configure slippage tolerance in the swap interface`
+  </Accordion>
+
+  <Accordion title="Focus on what and why">
+    If needed, add a longer description explaining why:
+    
+    ```
+    fix(portfolio): correct balance calculation for wrapped tokens
+    
+    Wrapped tokens were showing double the actual balance due to
+    counting both the wrapped and underlying asset.
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Branch Naming
+
+Follow this suggested format for branch names:
+
+```
+type/issue-number-short-description
+```
+
+### Examples
+
+```bash
+fix/123-recipient-validation
+```
+
+```bash
+feat/456-multi-chain-support
+```
+
+```bash
+docs/789-contribution-guide
+```
+
+## Testing Requirements
+
+### Pre-PR Checks
+
+Before opening a PR, ensure these pass:
+
+<Steps>
+  <Step title="Linting">
+    ```bash
+    pnpm lint
+    ```
+    
+    All linting errors must be resolved.
+  </Step>
+
+  <Step title="Build">
+    ```bash
+    pnpm build
+    ```
+    
+    The production build must complete successfully.
+  </Step>
+
+  <Step title="Manual testing">
+    Test your changes manually:
+    
+    - Verify the happy path works
+    - Test edge cases
+    - Check error handling
+    - Test on different viewports (for UI changes)
+  </Step>
+</Steps>
+
+### What to Test
+
+<AccordionGroup>
+  <Accordion title="Happy path">
+    Test the main user flow:
+    
+    - Does the feature work as intended?
+    - Are success messages clear?
+    - Does the UI update correctly?
+  </Accordion>
+
+  <Accordion title="Edge cases">
+    Consider unusual scenarios:
+    
+    - Empty states
+    - Maximum/minimum values
+    - Network errors
+    - Invalid input
+  </Accordion>
+
+  <Accordion title="Error handling">
+    Verify errors are handled gracefully:
+    
+    - Are error messages helpful?
+    - Does the app recover from errors?
+    - Are validation errors shown clearly?
+  </Accordion>
+
+  <Accordion title="Performance">
+    For features that might impact performance:
+    
+    - Test with realistic data volumes
+    - Check for memory leaks
+    - Verify loading states
+  </Accordion>
+</AccordionGroup>
+
+## Pull Request Checklist
+
+Before submitting your PR, verify:
+
+- [ ] Linked to an issue with `Closes #123` or `Fixes #123`
+- [ ] `pnpm lint` passes
+- [ ] `pnpm build` succeeds
+- [ ] Manually tested the changes
+- [ ] Screenshots included (for UI changes)
+- [ ] Documentation updated (if behavior changed)
+- [ ] Commit messages follow conventions
+- [ ] PR description explains what and why
+
+## Code of Conduct
+
+All contributors must follow the Walty Code of Conduct.
+
+### Expected Behavior
+
+<CardGroup cols={2}>
+  <Card title="Be Respectful" icon="handshake">
+    Be respectful and constructive in discussions. Assume good intent.
+  </Card>
+  
+  <Card title="Give Feedback" icon="comments">
+    Provide actionable technical feedback that helps improve the code.
+  </Card>
+  
+  <Card title="Help Newcomers" icon="user-plus">
+    Help new contributors understand context and project conventions.
+  </Card>
+  
+  <Card title="Ask Questions" icon="circle-question">
+    Ask for clarification before escalating or making assumptions.
+  </Card>
+</CardGroup>
+
+### Unacceptable Behavior
+
+<Warning>
+  The following behaviors are not tolerated:
+  
+  - Harassment, hate speech, threats, or discrimination
+  - Personal attacks, trolling, or repeated hostile behavior
+  - Sharing private information without consent
+  - Disruptive behavior that blocks healthy collaboration
+</Warning>
+
+### Enforcement
+
+Project maintainers are responsible for interpreting and enforcing this Code of Conduct.
+
+Reports are reviewed case by case. Maintainers may take any action they consider appropriate, including:
+
+- Warning
+- Temporary restriction
+- Permanent ban from participation
+
+### Reporting
+
+If you experience or witness behavior that violates this Code of Conduct, contact the repository owner privately through GitHub:
+
+[https://github.com/ignaciogarcia-dev](https://github.com/ignaciogarcia-dev)
+
+## Documentation Standards
+
+When updating documentation:
+
+- **Use clear language** - Write for developers of all skill levels
+- **Include examples** - Show, don't just tell
+- **Keep it current** - Update docs when changing behavior
+- **Link related content** - Help users find related information
+
+<Note>
+  Documentation is code. Treat it with the same care and review process as application code.
+</Note>
+
+## Dependencies
+
+When adding or updating dependencies:
+
+<Steps>
+  <Step title="Justify the addition">
+    Explain why the dependency is needed:
+    
+    - What problem does it solve?
+    - Why not implement it yourself?
+    - What are the alternatives?
+  </Step>
+
+  <Step title="Check maintenance status">
+    Verify the package is:
+    
+    - Actively maintained
+    - Well-documented
+    - Has a reasonable size
+    - Has acceptable license
+  </Step>
+
+  <Step title="Update lock file">
+    Make sure to commit the updated `pnpm-lock.yaml`:
+    
+    ```bash
+    pnpm install
+    ```
+  </Step>
+</Steps>
+
+## Security Considerations
+
+Walty is a cryptocurrency wallet. Security is critical.
+
+### Security Best Practices
+
+- **Never log sensitive data** - Private keys, passwords, etc.
+- **Validate all input** - Never trust user input
+- **Use secure dependencies** - Keep dependencies updated
+- **Follow principle of least privilege** - Only request necessary permissions
+
+<Warning>
+  If you discover a security vulnerability, do NOT open a public issue. Contact the maintainers privately through GitHub.
+</Warning>
+
+## Getting Help
+
+If you need help:
+
+- **Read the docs** - Check the [development guide](/contributing/getting-started)
+- **Search issues** - Someone may have had the same question
+- **Ask in the issue** - Comment on the issue you're working on
+- **Be specific** - Include error messages, steps to reproduce, etc.
+
+<CardGroup cols={2}>
+  <Card title="Getting Started" icon="rocket" href="/contributing/getting-started">
+    Set up your development environment
+  </Card>
+  
+  <Card title="Workflow" icon="code-branch" href="/contributing/workflow">
+    Learn the issue-first contribution process
+  </Card>
+</CardGroup>

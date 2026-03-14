@@ -1,0 +1,346 @@
+---
+title: 'Authentication'
+description: 'JWT-based authentication using HTTP-only cookies'
+---
+
+## Overview
+
+Walty uses JWT (JSON Web Token) authentication with HTTP-only cookies for secure session management. The authentication flow involves:
+
+1. User registration or login via API endpoints
+2. Server generates a JWT token and sets it as an HTTP-only cookie
+3. Browser automatically includes the cookie in subsequent requests
+4. Protected endpoints verify the JWT token using `requireAuth()`
+
+<Note>
+  Tokens are valid for 7 days from issuance and are automatically renewed on login.
+</Note>
+
+## Cookie Configuration
+
+Authentication tokens are stored in cookies with the following security attributes:
+
+- **HttpOnly** - Prevents JavaScript access to the token
+- **Secure** - Only transmitted over HTTPS in production
+- **SameSite=Strict** - Prevents CSRF attacks
+- **Path=/** - Available to all routes
+
+## Register User
+
+Create a new user account and receive an authentication token.
+
+### Endpoint
+
+```
+POST /api/auth/register
+```
+
+### Request Body
+
+<ParamField body="email" type="string" required>
+  User's email address. Must be a valid email format containing `@`.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password. Must be at least 8 characters long.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://your-domain.com/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "securepassword123"
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('/api/auth/register', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    email: 'user@example.com',
+    password: 'securepassword123'
+  }),
+  credentials: 'include' // Important: include cookies
+});
+
+const data = await response.json();
+```
+
+</CodeGroup>
+
+### Response
+
+<ResponseField name="ok" type="boolean">
+  Returns `true` on successful registration.
+</ResponseField>
+
+**Success Response (200)**
+```json
+{
+  "ok": true
+}
+```
+
+**Set-Cookie Header**
+```
+Set-Cookie: token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...; HttpOnly; Secure; SameSite=Strict; Path=/
+```
+
+### Error Responses
+
+<ResponseField name="400" type="Bad Request">
+  **Error:** `invalid-email-or-password`
+  
+  Returned when:
+  - Email doesn't contain `@`
+  - Password is missing
+  - Password is less than 8 characters
+</ResponseField>
+
+<ResponseField name="409" type="Conflict">
+  **Error:** `email-already-in-use`
+  
+  The email address is already registered.
+</ResponseField>
+
+<ResponseField name="429" type="Too Many Requests">
+  **Error:** `Too many requests`
+  
+  Rate limit exceeded for this IP address.
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  **Error:** `unexpected-error`
+  
+  Database or server error occurred.
+</ResponseField>
+
+## Login
+
+Authenticate an existing user and receive an authentication token.
+
+### Endpoint
+
+```
+POST /api/auth/login
+```
+
+### Request Body
+
+<ParamField body="email" type="string" required>
+  User's email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://your-domain.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d '{
+    "email": "user@example.com",
+    "password": "securepassword123"
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('/api/auth/login', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    email: 'user@example.com',
+    password: 'securepassword123'
+  }),
+  credentials: 'include'
+});
+
+const data = await response.json();
+```
+
+</CodeGroup>
+
+### Response
+
+**Success Response (200)**
+```json
+{
+  "ok": true
+}
+```
+
+**Set-Cookie Header**
+```
+Set-Cookie: token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...; HttpOnly; Secure; SameSite=Strict; Path=/
+```
+
+### Error Responses
+
+<ResponseField name="401" type="Unauthorized">
+  **Error:** `invalid credentials`
+  
+  Returned when:
+  - Email doesn't exist in the database
+  - Password doesn't match the stored hash
+</ResponseField>
+
+<ResponseField name="429" type="Too Many Requests">
+  **Error:** `Too many requests`
+  
+  Rate limit exceeded for this IP address.
+</ResponseField>
+
+## Logout
+
+Invalidate the current authentication token by clearing the cookie.
+
+### Endpoint
+
+```
+POST /api/auth/logout
+```
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://your-domain.com/api/auth/logout \
+  -b cookies.txt
+```
+
+```javascript JavaScript
+const response = await fetch('/api/auth/logout', {
+  method: 'POST',
+  credentials: 'include'
+});
+
+const data = await response.json();
+```
+
+</CodeGroup>
+
+### Response
+
+**Success Response (200)**
+```json
+{
+  "ok": true
+}
+```
+
+**Set-Cookie Header**
+```
+Set-Cookie: token=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0
+```
+
+<Note>
+  The logout endpoint always returns success and clears the cookie, even if no valid token was present.
+</Note>
+
+## JWT Token Structure
+
+JWT tokens contain the following payload:
+
+```json
+{
+  "userId": 123,
+  "userType": "person",
+  "iat": 1234567890,
+  "exp": 1234972890
+}
+```
+
+<ParamField body="userId" type="number">
+  The unique identifier for the user in the database.
+</ParamField>
+
+<ParamField body="userType" type="string">
+  Either `"person"` or `"business"` indicating the account type.
+</ParamField>
+
+<ParamField body="iat" type="number">
+  Issued at timestamp (Unix timestamp).
+</ParamField>
+
+<ParamField body="exp" type="number">
+  Expiration timestamp (Unix timestamp). Tokens expire 7 days after issuance.
+</ParamField>
+
+## Protected Routes
+
+To access protected API endpoints, you must include the authentication cookie in your request. The server validates the token using the `requireAuth()` function defined in `lib/auth.ts:10`.
+
+### Example: Get Current User
+
+```bash cURL
+curl -X GET https://your-domain.com/api/me \
+  -b cookies.txt
+```
+
+**Success Response (200)**
+```json
+{
+  "user": {
+    "userId": 123,
+    "email": "user@example.com",
+    "userType": "person"
+  }
+}
+```
+
+**Error Response (401)**
+```json
+{
+  "error": "invalid token"
+}
+```
+
+<Warning>
+  If you attempt to access a protected route without a valid token, you'll receive a `401 Unauthorized` response. The error message may be:
+  - `"invalid token"` - Token is missing or expired
+  - `"Unauthorized"` - Generic authorization failure
+  - `"not found"` - User associated with the token doesn't exist
+</Warning>
+
+## Security Implementation
+
+The authentication system implements several security measures:
+
+### Password Hashing
+
+Passwords are hashed using bcrypt with a cost factor of 10 before storage (`app/api/auth/register/route.ts:31`).
+
+### Token Signing
+
+JWT tokens are signed using the `JWT_SECRET` environment variable. This secret must be kept secure and should be a strong, random value.
+
+### Rate Limiting
+
+Both login and registration endpoints implement rate limiting based on IP address to prevent brute-force attacks (`app/api/auth/login/route.ts:11`, `app/api/auth/register/route.ts:11`).
+
+### Middleware Protection
+
+The Next.js middleware (`middleware.ts`) enforces authentication requirements at the route level:
+- Redirects unauthenticated users from `/dashboard` to `/onboarding`
+- Redirects authenticated users from `/` to `/dashboard`
+- Protects all dashboard routes automatically
+
+<Note>
+  The middleware checks for token presence in cookies (`middleware.ts:6`) but does not validate the token signature. Token validation happens in individual API routes using `requireAuth()`.
+</Note>

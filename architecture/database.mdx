@@ -1,0 +1,452 @@
+---
+title: Database Schema
+description: PostgreSQL schema, table relationships, and Drizzle ORM usage
+---
+
+## Overview
+
+Walty uses **PostgreSQL** as its database and **Drizzle ORM** for type-safe schema definitions and queries.
+
+| Component | Technology |
+|-----------|------------|
+| **Database** | PostgreSQL |
+| **ORM** | Drizzle ORM |
+| **Schema Definition** | `server/db/schema.ts` |
+| **Migrations** | `drizzle/` (auto-generated) |
+| **Client** | `server/db/index.ts` |
+
+<Note>
+Database migrations are applied automatically on container startup when using Docker Compose.
+</Note>
+
+## Schema Location
+
+The schema is defined in TypeScript using Drizzle ORM:
+
+```typescript server/db/schema.ts
+import { pgTable, serial, text, timestamp, pgEnum, integer, unique, uuid, boolean } from "drizzle-orm/pg-core"
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  userType: text("user_type").notNull().default("person"),
+  createdAt: timestamp("created_at").defaultNow(),
+})
+```
+
+Migrations are stored in `drizzle/` and generated via `pnpm db:migrate`.
+
+## Core Tables
+
+### `users`
+
+Stores user accounts and authentication credentials.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `serial` | Primary key | Auto-incrementing user ID |
+| `email` | `text` | NOT NULL, UNIQUE | User email (login identifier) |
+| `password_hash` | `text` | NOT NULL | bcrypt hash of password |
+| `user_type` | `text` | NOT NULL, default `'person'` | Account type: `'person'` or `'business'` |
+| `created_at` | `timestamp` | default `now()` | Account creation timestamp |
+
+**Notes:**
+- Passwords are hashed using **bcrypt** before storage
+- `user_type` controls access to payment request (POS) features
+- Business accounts can create payment requests; person accounts cannot
+
+**Relationships:**
+- One user → many addresses
+- One user → many transactions
+- One user → many contacts
+- One user → one user profile
+- One user → many wallet backups
+- One user → many wallet nonces
+- One user → many payment requests (if business)
+
+### `addresses`
+
+Stores blockchain addresses associated with each user.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `serial` | Primary key | Auto-incrementing ID |
+| `user_id` | `integer` | NOT NULL, FK → `users.id`, ON DELETE CASCADE | Owner of the address |
+| `address` | `text` | NOT NULL | Blockchain address (0x...) |
+
+**Unique constraint:**
+- `(user_id, address)` - A user cannot have duplicate addresses
+
+**Notes:**
+- Users can have multiple addresses (multi-wallet support)
+- Addresses are added when users import or create wallets
+- Cascade delete: deleting a user removes all their addresses
+
+### `transactions`
+
+Stores transaction history for activity tracking.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `serial` | Primary key | Auto-incrementing ID |
+| `user_id` | `integer` | NOT NULL, FK → `users.id`, ON DELETE CASCADE | Transaction owner |
+| `hash` | `text` | NOT NULL, UNIQUE | Transaction hash (0x...) |
+| `chain_id` | `integer` | NOT NULL, default `1` | EVM chain ID (1 = Ethereum) |
+| `chain_type` | `text` | NOT NULL, default `'EVM'` | Chain type (currently only `'EVM'`) |
+| `from_address` | `text` | NOT NULL | Sender address |
+| `to_address` | `text` | NOT NULL | Recipient address |
+| `token_address` | `text` | nullable | ERC-20 contract (null for native tokens) |
+| `token_symbol` | `text` | NOT NULL | Token symbol (ETH, USDC, etc.) |
+| `value` | `text` | NOT NULL | Amount in token's smallest unit (wei) |
+| `status` | `tx_status` | NOT NULL, default `'pending'` | Status enum |
+| `gas_used` | `text` | nullable | Gas consumed (populated after confirmation) |
+| `block_number` | `text` | nullable | Block number (populated after confirmation) |
+| `created_at` | `timestamp` | NOT NULL, default `now()` | Record creation time |
+
+**Enum: `tx_status`**
+```sql
+CREATE TYPE "public"."tx_status" AS ENUM('pending', 'confirmed', 'failed');
+```
+
+**Notes:**
+- `value` is stored as text to handle large numbers (BigInt)
+- Native token transfers have `token_address = null`
+- Transaction status is updated by polling blockchain
+- Cascade delete: deleting a user removes their transaction history
+
+### `contacts`
+
+Stores user-defined address book entries.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `serial` | Primary key | Auto-incrementing ID |
+| `user_id` | `integer` | NOT NULL, FK → `users.id`, ON DELETE CASCADE | Owner of the contact |
+| `name` | `text` | NOT NULL | Contact name/label |
+| `address` | `text` | NOT NULL | Blockchain address |
+| `created_at` | `timestamp` | default `now()` | Contact creation time |
+
+**Notes:**
+- No uniqueness constraint on `(user_id, address)` - users can save the same address multiple times with different names
+- Used for quick address selection in send forms
+
+### `user_profiles`
+
+Stores optional user profile data (username).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `serial` | Primary key | Auto-incrementing ID |
+| `user_id` | `integer` | NOT NULL, UNIQUE, FK → `users.id`, ON DELETE CASCADE | Profile owner |
+| `username` | `text` | NOT NULL, UNIQUE | Unique username |
+| `created_at` | `timestamp` | default `now()` | Profile creation time |
+
+**Notes:**
+- One-to-one relationship: each user has at most one profile
+- Usernames are globally unique
+- Created during onboarding flow
+
+### `wallet_nonces`
+
+Stores temporary nonces for wallet-based authentication (e.g., sign-in with Ethereum).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `serial` | Primary key | Auto-incrementing ID |
+| `user_id` | `integer` | NOT NULL, FK → `users.id`, ON DELETE CASCADE | User who requested the nonce |
+| `nonce` | `text` | NOT NULL | Random nonce string |
+| `expires_at` | `timestamp` | NOT NULL | Nonce expiration time |
+
+**Notes:**
+- Used for challenge-response authentication
+- Nonces are single-use and short-lived
+- Expired nonces should be cleaned up periodically
+
+### `wallet_backups`
+
+Stores encrypted wallet seed backups (PIN-based server-side recovery).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `serial` | Primary key | Auto-incrementing ID |
+| `user_id` | `integer` | NOT NULL, FK → `users.id`, ON DELETE CASCADE | Backup owner |
+| `wallet_address` | `text` | NOT NULL | Address derived from the seed |
+| `ciphertext` | `text` | NOT NULL | Encrypted seed (base64) |
+| `iv` | `text` | NOT NULL | AES-GCM initialization vector (base64) |
+| `salt` | `text` | NOT NULL | PBKDF2 salt (base64) |
+| `version` | `integer` | NOT NULL | Encryption version (1 = password, 2 = PIN) |
+| `created_at` | `timestamp` | default `now()` | Backup creation time |
+| `updated_at` | `timestamp` | default `now()` | Last update time |
+
+**Encryption versions:**
+- `version: 1` - Password-based encryption (legacy, not used)
+- `version: 2` - PIN-based encryption with server pepper
+
+**Notes:**
+- See [Security Model](/architecture/security) for encryption details
+- Backups are **end-to-end encrypted**; server cannot decrypt without user's PIN
+- Multiple backups per user are allowed (different wallets)
+
+### `payment_requests`
+
+Stores merchant payment requests (invoices) for point-of-sale functionality.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `uuid` | Primary key, default `gen_random_uuid()` | Request ID (used in QR code) |
+| `merchant_id` | `integer` | NOT NULL, FK → `users.id`, ON DELETE CASCADE | Merchant (business account) |
+| `chain_id` | `integer` | NOT NULL, default `137` | Blockchain (137 = Polygon) |
+| `amount_usd` | `text` | NOT NULL | Requested amount in USD |
+| `amount_token` | `text` | NOT NULL | Requested amount in tokens |
+| `token_symbol` | `text` | NOT NULL | Token (USDC or USDT) |
+| `token_address` | `text` | NOT NULL | ERC-20 contract address |
+| `token_decimals` | `integer` | NOT NULL | Token decimals (6 for USDC/USDT) |
+| `merchant_wallet_address` | `text` | NOT NULL | Merchant's receiving address |
+| `status` | `text` | NOT NULL, default `'pending'` | Status: pending/paid/expired/cancelled |
+| `tx_hash` | `text` | nullable, UNIQUE | Payment transaction hash (null until paid) |
+| `tx_block_number` | `text` | nullable | Block number of payment |
+| `payer_address` | `text` | nullable | Address that paid (null until paid) |
+| `start_block` | `text` | NOT NULL | Polygon block at request creation |
+| `last_scanned_block` | `text` | NOT NULL | Last block scanned for payment |
+| `confirmations` | `integer` | NOT NULL, default `0` | Number of confirmations |
+| `required_confirmations` | `integer` | NOT NULL, default `2` | Confirmations needed |
+| `detected_at` | `timestamp` | nullable | When payment was first detected |
+| `paid_at` | `timestamp` | nullable | When payment was confirmed |
+| `created_at` | `timestamp` | NOT NULL, default `now()` | Request creation time |
+| `updated_at` | `timestamp` | NOT NULL, default `now()` | Last status update |
+| `expires_at` | `timestamp` | NOT NULL | Request expiration (15 min default) |
+| `is_split_payment` | `boolean` | NOT NULL, default `false` | Allow multiple payers |
+| `total_paid_token` | `text` | default `'0'` | Total paid in tokens (split payments) |
+| `total_paid_usd` | `text` | default `'0'` | Total paid in USD (split payments) |
+
+**Notes:**
+- Only **business accounts** can create payment requests
+- Requests expire after 15 minutes by default
+- Payment detection scans Polygon `Transfer` logs from `start_block`
+- Split payments allow multiple payers to contribute to one invoice
+- `tx_hash` is unique to prevent duplicate payment processing
+
+**Related table:**
+- `split_payment_contributions` - Tracks individual contributions to split payments
+
+### `split_payment_contributions`
+
+Stores individual contributions to split payment requests.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `serial` | Primary key | Auto-incrementing ID |
+| `payment_request_id` | `uuid` | NOT NULL, FK → `payment_requests.id`, ON DELETE CASCADE | Parent payment request |
+| `tx_hash` | `text` | NOT NULL, UNIQUE | Transaction hash of contribution |
+| `payer_address` | `text` | NOT NULL | Contributor's address |
+| `amount_token` | `text` | NOT NULL | Amount contributed (tokens) |
+| `amount_usd` | `text` | NOT NULL | Amount contributed (USD) |
+| `token_symbol` | `text` | NOT NULL | Token used |
+| `confirmations` | `integer` | NOT NULL, default `0` | Confirmation count |
+| `status` | `text` | NOT NULL, default `'pending'` | Status: pending/confirmed |
+| `block_number` | `text` | nullable | Block number |
+| `detected_at` | `timestamp` | nullable | Detection timestamp |
+| `confirmed_at` | `timestamp` | nullable | Confirmation timestamp |
+| `created_at` | `timestamp` | NOT NULL, default `now()` | Record creation time |
+
+**Notes:**
+- Allows multiple users to split the cost of a single invoice
+- Each contribution is tracked separately
+- Parent request status is updated when `total_paid >= amount_requested`
+
+## Schema Relationships
+
+```mermaid
+erDiagram
+    users ||--o{ addresses : has
+    users ||--o{ transactions : has
+    users ||--o{ contacts : has
+    users ||--|| user_profiles : has
+    users ||--o{ wallet_nonces : has
+    users ||--o{ wallet_backups : has
+    users ||--o{ payment_requests : creates
+    payment_requests ||--o{ split_payment_contributions : has
+    
+    users {
+        serial id PK
+        text email UK
+        text password_hash
+        text user_type
+        timestamp created_at
+    }
+    
+    addresses {
+        serial id PK
+        integer user_id FK
+        text address
+    }
+    
+    transactions {
+        serial id PK
+        integer user_id FK
+        text hash UK
+        integer chain_id
+        text status
+    }
+    
+    payment_requests {
+        uuid id PK
+        integer merchant_id FK
+        text amount_usd
+        text status
+        text tx_hash UK
+    }
+```
+
+## Drizzle ORM Usage
+
+### Schema Definition
+
+```typescript server/db/schema.ts
+import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core"
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  userType: text("user_type").notNull().default("person"),
+  createdAt: timestamp("created_at").defaultNow(),
+})
+```
+
+### Database Client
+
+```typescript server/db/index.ts
+import { drizzle } from "drizzle-orm/node-postgres"
+import { Pool } from "pg"
+import * as schema from "./schema"
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+})
+
+export const db = drizzle(pool, { schema })
+```
+
+### Query Examples
+
+<CodeGroup>
+```typescript Find user by email
+import { db } from "@/server/db"
+import { users } from "@/server/db/schema"
+import { eq } from "drizzle-orm"
+
+const user = await db.query.users.findFirst({
+  where: eq(users.email, "user@example.com"),
+  columns: { id: true, email: true, userType: true },
+})
+```
+
+```typescript Get user with addresses
+import { db } from "@/server/db"
+import { users, addresses } from "@/server/db/schema"
+import { eq } from "drizzle-orm"
+
+const userWithAddresses = await db.query.users.findFirst({
+  where: eq(users.id, userId),
+  with: {
+    addresses: true,
+  },
+})
+```
+
+```typescript Create transaction record
+import { db } from "@/server/db"
+import { transactions } from "@/server/db/schema"
+
+await db.insert(transactions).values({
+  userId: 1,
+  hash: "0xabc123...",
+  chainId: 1,
+  fromAddress: "0x...",
+  toAddress: "0x...",
+  tokenSymbol: "ETH",
+  value: "1000000000000000000", // 1 ETH in wei
+  status: "pending",
+})
+```
+
+```typescript Update payment request status
+import { db } from "@/server/db"
+import { paymentRequests } from "@/server/db/schema"
+import { eq } from "drizzle-orm"
+
+await db.update(paymentRequests)
+  .set({
+    status: "paid",
+    txHash: "0xdef456...",
+    paidAt: new Date(),
+  })
+  .where(eq(paymentRequests.id, requestId))
+```
+</CodeGroup>
+
+## Database Migrations
+
+### Running Migrations
+
+<CodeGroup>
+```bash Development
+pnpm db:migrate
+```
+
+```bash Production (Docker)
+# Migrations run automatically via entrypoint.sh
+docker compose up
+```
+</CodeGroup>
+
+### Creating Migrations
+
+1. Edit `server/db/schema.ts`
+2. Run `pnpm db:migrate` to generate migration files
+3. Drizzle Kit creates SQL migration in `drizzle/` directory
+4. Migration is applied automatically
+
+<Warning>
+Always review generated migrations before applying them in production. Drizzle Kit may not handle all schema changes correctly (e.g., renaming columns).
+</Warning>
+
+### Database Studio
+
+Drizzle Kit includes a web-based database browser:
+
+```bash
+pnpm db:studio
+```
+
+Opens https://local.drizzle.studio for browsing and editing data.
+
+## Environment Variables
+
+Database connection is configured via environment variables:
+
+```bash .env
+DATABASE_URL=postgresql://wallet:wallet@localhost:5432/wallet
+```
+
+**Docker Compose:**
+```bash
+DATABASE_URL=postgresql://wallet:wallet@db:5432/wallet
+```
+
+<Note>
+The `db` hostname in Docker Compose refers to the PostgreSQL service defined in `docker-compose.yml`.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security Model" icon="shield" href="/architecture/security">
+    Learn about encryption, key handling, and authentication
+  </Card>
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture/overview">
+    Back to architecture overview
+  </Card>
+</CardGroup>

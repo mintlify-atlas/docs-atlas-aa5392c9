@@ -1,0 +1,356 @@
+---
+title: "Contacts"
+description: "Manage saved wallet addresses and contact information"
+---
+
+## Overview
+
+The contacts API allows users to save frequently used wallet addresses with friendly names for quick access. Each contact consists of a name and blockchain address.
+
+<Note>
+  All contacts endpoints require authentication. Users can only manage their own contacts.
+</Note>
+
+---
+
+## List Contacts
+
+<ParamField path="/api/contacts" method="GET">
+  Returns all contacts for the authenticated user.
+</ParamField>
+
+### Authentication
+Requires valid JWT token in Authorization header or cookie.
+
+### Response
+
+Returns an array of contact objects.
+
+<ResponseField name="contacts" type="array">
+  <ResponseField name="id" type="number">
+    Unique contact ID
+  </ResponseField>
+  
+  <ResponseField name="userId" type="number">
+    ID of the user who owns this contact
+  </ResponseField>
+  
+  <ResponseField name="name" type="string">
+    Display name for the contact
+  </ResponseField>
+  
+  <ResponseField name="address" type="string">
+    Blockchain wallet address
+  </ResponseField>
+  
+  <ResponseField name="createdAt" type="string">
+    ISO 8601 timestamp when contact was created
+  </ResponseField>
+</ResponseField>
+
+### Error Codes
+
+- `401` - Unauthorized (missing or invalid token)
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/contacts', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+const contacts = await response.json();
+```
+
+```json Example Response
+[
+  {
+    "id": 1,
+    "userId": 42,
+    "name": "Alice's Wallet",
+    "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    "createdAt": "2026-03-01T12:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "userId": 42,
+    "name": "Coffee Shop",
+    "address": "0x1234567890abcdef1234567890abcdef12345678",
+    "createdAt": "2026-03-10T15:30:00.000Z"
+  }
+]
+```
+
+```json Empty Response
+[]
+```
+</CodeGroup>
+
+---
+
+## Add Contact
+
+<ParamField path="/api/contacts" method="POST">
+  Creates a new contact with the specified name and address.
+</ParamField>
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Display name for the contact
+</ParamField>
+
+<ParamField body="address" type="string" required>
+  Blockchain wallet address (0x...)
+</ParamField>
+
+### Response
+
+Returns the created contact object.
+
+### Error Codes
+
+- `400` - Missing required fields (name or address)
+- `401` - Unauthorized
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/contacts', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    name: "Alice's Wallet",
+    address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+  })
+});
+
+const newContact = await response.json();
+```
+
+```json Success Response
+{
+  "id": 3,
+  "userId": 42,
+  "name": "Alice's Wallet",
+  "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+  "createdAt": "2026-03-14T10:00:00.000Z"
+}
+```
+
+```json Error: Missing Fields
+{
+  "error": "Missing fields"
+}
+```
+</CodeGroup>
+
+<Note>
+  The address format is not validated by the API. Ensure you provide a valid Ethereum-compatible address.
+</Note>
+
+---
+
+## Delete Contact
+
+<ParamField path="/api/contacts" method="DELETE">
+  Removes a contact by ID. Users can only delete their own contacts.
+</ParamField>
+
+### Request Body
+
+<ParamField body="id" type="number" required>
+  Contact ID to delete
+</ParamField>
+
+### Response
+
+<ResponseField name="ok" type="boolean">
+  Success indicator
+</ResponseField>
+
+### Error Codes
+
+- `400` - Missing contact ID
+- `401` - Unauthorized
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/contacts', {
+  method: 'DELETE',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    id: 3
+  })
+});
+
+const result = await response.json();
+```
+
+```json Success Response
+{
+  "ok": true
+}
+```
+
+```json Error: Missing ID
+{
+  "error": "Missing id"
+}
+```
+</CodeGroup>
+
+<Warning>
+  Deletion is permanent and cannot be undone. The contact is removed immediately.
+</Warning>
+
+---
+
+## Use Cases
+
+### Quick Send to Saved Contacts
+
+```typescript
+// Fetch contacts for address autocomplete
+const contacts = await fetch('/api/contacts').then(r => r.json());
+
+// User selects "Coffee Shop" from dropdown
+const coffeeShop = contacts.find(c => c.name === 'Coffee Shop');
+
+// Pre-fill send form
+const sendForm = {
+  to: coffeeShop.address,
+  amount: '10.00',
+  token: 'USDC'
+};
+```
+
+### Save Frequent Recipients
+
+```typescript
+// After successful payment, offer to save recipient
+const recipientAddress = '0x1234...';
+const recipientName = prompt('Save this address as:');
+
+if (recipientName) {
+  await fetch('/api/contacts', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: recipientName,
+      address: recipientAddress
+    })
+  });
+}
+```
+
+### Manage Contact List
+
+```typescript
+// Display contacts with delete option
+const contacts = await fetch('/api/contacts').then(r => r.json());
+
+contacts.forEach(contact => {
+  console.log(`${contact.name}: ${contact.address}`);
+  
+  // Allow user to delete
+  if (confirm(`Delete ${contact.name}?`)) {
+    await fetch('/api/contacts', {
+      method: 'DELETE',
+      body: JSON.stringify({ id: contact.id })
+    });
+  }
+});
+```
+
+---
+
+## Address Book Integration
+
+Contacts can be integrated with other Walty features:
+
+### Payment Requests
+
+Use contacts when creating payment requests:
+
+```typescript
+const contacts = await fetch('/api/contacts').then(r => r.json());
+const merchantWallet = contacts.find(c => c.name === 'Main Wallet');
+
+await fetch('/api/payment-requests', {
+  method: 'POST',
+  body: JSON.stringify({
+    amountUsd: '50.00',
+    token: 'USDC',
+    merchantWalletAddress: merchantWallet.address
+  })
+});
+```
+
+### Link Addresses
+
+Save linked addresses as contacts for easy reference:
+
+```typescript
+// After linking an address
+const linkedAddress = '0x742d35Cc...';
+
+await fetch('/api/contacts', {
+  method: 'POST',
+  body: JSON.stringify({
+    name: 'My Hardware Wallet',
+    address: linkedAddress
+  })
+});
+```
+
+---
+
+## Best Practices
+
+### Naming Conventions
+
+- Use descriptive names: "Coffee Shop Main Wallet" instead of "Wallet 1"
+- Include purpose: "Savings Wallet", "Business Payments", "Personal Spending"
+- Avoid special characters that might cause display issues
+
+### Address Verification
+
+Always verify addresses before adding:
+
+```typescript
+import { isAddress } from 'viem';
+
+function addContact(name: string, address: string) {
+  if (!isAddress(address)) {
+    throw new Error('Invalid Ethereum address');
+  }
+  
+  return fetch('/api/contacts', {
+    method: 'POST',
+    body: JSON.stringify({ name, address })
+  });
+}
+```
+
+### Duplicate Prevention
+
+Check for duplicates before adding:
+
+```typescript
+const contacts = await fetch('/api/contacts').then(r => r.json());
+const duplicate = contacts.find(c => 
+  c.address.toLowerCase() === newAddress.toLowerCase()
+);
+
+if (duplicate) {
+  alert(`This address is already saved as "${duplicate.name}"`);
+} else {
+  // Add new contact
+}
+```

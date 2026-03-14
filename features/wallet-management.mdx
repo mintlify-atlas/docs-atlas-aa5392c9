@@ -1,0 +1,247 @@
+---
+title: 'Wallet Management'
+description: 'Create, import, and secure your crypto wallet with industry-standard encryption'
+---
+
+# Wallet Management
+
+Walty provides secure, non-custodial wallet management with multiple backup options and enterprise-grade encryption. Your private keys never leave your device and are always encrypted at rest.
+
+## Creating a New Wallet
+
+When you create a new wallet in Walty, a cryptographically secure 24-word seed phrase is generated using the BIP39 standard.
+
+<Steps>
+  <Step title="Generate Seed Phrase">
+    Walty uses `viem`'s `generateMnemonic` function to create a 256-bit entropy seed phrase (24 words) from the English wordlist.
+
+    ```typescript
+    import { generateMnemonic, mnemonicToAccount, english } from "viem/accounts"
+
+    function createWallet() {
+      const mnemonic = generateMnemonic(english, 256)
+      const account = mnemonicToAccount(mnemonic)
+      
+      return {
+        mnemonic,
+        address: account.address,
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Encrypt and Store">
+    Your seed phrase is immediately encrypted using AES-256-GCM with a password-derived key (PBKDF2, 210,000 iterations) before being stored locally.
+
+    The encryption process generates:
+    - A random 16-byte salt
+    - A random 12-byte initialization vector (IV)
+    - The encrypted ciphertext
+
+    ```typescript
+    const encrypted = await encryptSeed(mnemonic, password)
+    // Returns: { ciphertext, iv, salt, version: 1 }
+    ```
+  </Step>
+
+  <Step title="Display Seed Phrase">
+    During wallet creation, users are shown their 24-word seed phrase **once** and required to confirm they've saved it securely before proceeding.
+
+    <Warning>
+      Seed phrases are never shown again after initial wallet creation. Users must save them securely offline.
+    </Warning>
+  </Step>
+</Steps>
+
+## Importing an Existing Wallet
+
+Users can import wallets using their existing 12-word or 24-word BIP39 seed phrases from other wallets.
+
+<Steps>
+  <Step title="Enter Seed Phrase">
+    Users paste or type their seed phrase into the import form. The app validates it against the BIP39 wordlist.
+  </Step>
+
+  <Step title="Derive Address">
+    Walty derives the Ethereum address from the seed phrase using the standard BIP44 derivation path.
+
+    ```typescript
+    const account = mnemonicToAccount(mnemonic)
+    const address = account.address // 0x...
+    ```
+  </Step>
+
+  <Step title="Set Password & Encrypt">
+    Users set a new password for the Walty app. The seed phrase is encrypted and stored locally using the same encryption as wallet creation.
+  </Step>
+</Steps>
+
+## Backup Methods
+
+Walty offers two backup methods to ensure users never lose access to their funds:
+
+### Password-Based Backup (Version 1)
+
+The standard backup method using a user-chosen password:
+
+```typescript
+export type EncryptedSeed = {
+  ciphertext: string
+  iv: string
+  salt: string
+  version: 1
+}
+```
+
+**Security features:**
+- AES-256-GCM encryption
+- PBKDF2 key derivation (210,000 iterations, SHA-256)
+- Random salt and IV for each encryption
+- Authenticated encryption prevents tampering
+
+### PIN-Based Backup (Version 2)
+
+For business accounts and advanced users, Walty supports server-assisted PIN backups:
+
+```typescript
+export type PinEncryptedSeed = {
+  ciphertext: string
+  iv: string
+  salt: string
+  version: 2
+}
+```
+
+**How it works:**
+1. User sets a 6-digit PIN
+2. Server provides a secret challenge value
+3. Encryption key = PBKDF2(PIN + serverChallenge, salt)
+4. Encrypted seed is stored locally
+
+<Info>
+  PIN-based backups require the server challenge to decrypt, making offline brute-force attacks significantly harder even with a short PIN.
+</Info>
+
+**Implementation:**
+
+```typescript
+async function encryptSeedWithPin(
+  mnemonic: string,
+  pin: string,
+  challenge: string,
+): Promise<PinEncryptedSeed> {
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const key = await derivePinKey(pin, challenge, salt)
+
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(mnemonic),
+  )
+
+  return {
+    ciphertext: toBase64(new Uint8Array(ciphertext)),
+    iv: toBase64(iv),
+    salt: toBase64(salt),
+    version: 2,
+  }
+}
+```
+
+## Wallet Recovery
+
+Users can recover their wallet using either:
+
+1. **Their password** - Decrypts the locally stored seed phrase
+2. **Their seed phrase** - Re-imports the wallet and sets a new password
+
+<Steps>
+  <Step title="Authenticate">
+    User enters their password or seed phrase
+  </Step>
+
+  <Step title="Decrypt">
+    For password recovery:
+    ```typescript
+    const mnemonic = await decryptSeed(encrypted, password)
+    ```
+
+    For seed phrase recovery, the phrase is used directly.
+  </Step>
+
+  <Step title="Restore Access">
+    The wallet address is derived and the user regains full access to their funds.
+  </Step>
+</Steps>
+
+<Warning>
+  **Critical Security Notes:**
+  - If you lose both your password AND seed phrase, your funds cannot be recovered
+  - Walty never stores unencrypted seed phrases or private keys
+  - Never share your seed phrase with anyone, including Walty support
+</Warning>
+
+## Security Best Practices
+
+<Card title="For Users" icon="shield">
+  - Write down your 24-word seed phrase on paper (never digitally)
+  - Store it in a secure location like a safe or safety deposit box
+  - Consider using a metal backup for fire/water resistance
+  - Use a strong, unique password for your Walty account
+  - Never take screenshots of your seed phrase
+</Card>
+
+<Card title="For Developers" icon="code">
+  - Seed phrases are only decrypted in memory when needed for signing
+  - All encryption operations use Web Crypto API
+  - Key derivation uses 210,000 PBKDF2 iterations (OWASP recommended minimum)
+  - Encrypted data includes version field for future migration support
+</Card>
+
+## Multi-Chain Support
+
+Walty wallets work across all supported EVM chains:
+
+- Ethereum (Chain ID: 1)
+- Arbitrum (Chain ID: 42161)
+- Base (Chain ID: 8453)
+- Optimism (Chain ID: 10)
+- Polygon (Chain ID: 137)
+
+The same wallet address is used across all chains, following the EVM standard.
+
+<Info>
+  Your wallet address is the same on all EVM chains. However, each chain has separate balances and transaction histories.
+</Info>
+
+## Technical Architecture
+
+Walty's wallet management is built on:
+
+- **viem** - Modern Ethereum library for account management
+- **Web Crypto API** - Browser-native cryptographic operations
+- **BIP39/BIP44** - Industry-standard seed phrase and derivation
+- **Local Storage** - Client-side encrypted storage (non-custodial)
+
+```typescript
+// Encryption flow
+Seed Phrase (24 words)
+  → UTF-8 Encode
+  → AES-256-GCM Encrypt (with derived key)
+  → Base64 Encode
+  → Store locally
+
+// Decryption flow
+Base64 Ciphertext
+  → Base64 Decode
+  → AES-256-GCM Decrypt (with derived key)
+  → UTF-8 Decode
+  → Seed Phrase (24 words)
+```
+
+## Related Features
+
+- [Portfolio Tracking](/features/portfolio) - View balances across all chains
+- [Transactions](/features/transactions) - Send and receive crypto
+- [Payments](/features/payments) - Accept payments for business accounts

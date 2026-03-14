@@ -1,0 +1,211 @@
+---
+title: Getting Started
+description: Set up your local development environment and start contributing to Walty
+---
+
+This guide will help you set up your local development environment for contributing to Walty.
+
+## Prerequisites
+
+Before you begin, make sure you have the following installed:
+
+- **Node.js 20+** - JavaScript runtime
+- **pnpm** - Package manager
+- **Docker and Docker Compose** - For running services
+- **Git** - Version control
+
+## Development Setup
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Walty repository to your local machine:
+    
+    ```bash
+    git clone https://github.com/ignaciogarcia-dev/walty.git
+    cd walty
+    ```
+  </Step>
+
+  <Step title="Set up environment variables">
+    Copy the example environment file:
+    
+    ```bash
+    cp .env.example .env
+    ```
+    
+    Edit `.env` as needed for your local setup.
+  </Step>
+
+  <Step title="Choose your workflow">
+    Walty supports two development workflows:
+
+    <Accordion title="Full Docker Stack (Recommended)">
+      This is the recommended approach as it keeps runtime behavior aligned with production:
+      
+      ```bash
+      docker compose up --build
+      ```
+      
+      Or use the npm script:
+      
+      ```bash
+      pnpm docker
+      ```
+      
+      This starts the complete stack including the application and all services.
+    </Accordion>
+
+    <Accordion title="Infrastructure Only (Alternative)">
+      If you prefer to run only PostgreSQL in Docker and run the app locally:
+      
+      ```bash
+      docker compose -f compose.dev.yml up -d
+      pnpm install
+      pnpm db:migrate
+      pnpm dev
+      ```
+      
+      Or use the npm scripts:
+      
+      ```bash
+      pnpm docker:dev
+      pnpm install
+      pnpm db:migrate
+      pnpm dev
+      ```
+      
+      <Note>
+        While this workflow is supported, the full Docker workflow remains the default recommendation for consistency.
+      </Note>
+    </Accordion>
+  </Step>
+
+  <Step title="Verify your setup">
+    Once your development environment is running, verify it's working:
+    
+    - Open your browser to `http://localhost:3000` (or the port shown in your terminal)
+    - You should see the Walty application running
+  </Step>
+</Steps>
+
+## Available Scripts
+
+Here are the main scripts you'll use during development:
+
+| Command | Description |
+| --- | --- |
+| `pnpm dev` | Start Next.js dev server |
+| `pnpm build` | Build production app |
+| `pnpm start` | Start production server |
+| `pnpm lint` | Run ESLint |
+| `pnpm db:migrate` | Apply database changes (Drizzle) |
+| `pnpm db:studio` | Open Drizzle Studio for database inspection |
+| `pnpm docker` | Start full stack with Docker Compose |
+| `pnpm docker:dev` | Start dev DB stack (`compose.dev.yml`) |
+| `pnpm docker:dev:down` | Stop dev DB stack |
+| `pnpm dev:clean` | Clean local/dev artifacts |
+
+## Development Workflow
+
+Once your environment is set up, follow this workflow:
+
+<Steps>
+  <Step title="Pick an issue">
+    Find an issue to work on from the [GitHub issues](https://github.com/ignaciogarcia-dev/walty/issues). Look for:
+    
+    - `good first issue` labels for newcomers
+    - `help wanted` labels
+    - Issues that match your interests and skills
+  </Step>
+
+  <Step title="Create a branch">
+    Create a new branch from `main`:
+    
+    ```bash
+    git checkout main
+    git pull origin main
+    git checkout -b fix/123-short-description
+    ```
+  </Step>
+
+  <Step title="Make your changes">
+    Implement the smallest useful slice of the feature or fix.
+  </Step>
+
+  <Step title="Run checks">
+    Before opening a PR, run these commands:
+    
+    ```bash
+    pnpm lint
+    pnpm build
+    ```
+    
+    Make sure both pass without errors.
+  </Step>
+
+  <Step title="Open a pull request">
+    Push your branch and open a PR linked to the issue. See the [workflow guide](/contributing/workflow) for details.
+  </Step>
+</Steps>
+
+## Database Management
+
+### Running Migrations
+
+When database schema changes are needed:
+
+```bash
+pnpm db:migrate
+```
+
+This applies changes using Drizzle Kit.
+
+### Database Studio
+
+To inspect and interact with your database:
+
+```bash
+pnpm db:studio
+```
+
+This opens Drizzle Studio in your browser for visual database management.
+
+## Troubleshooting
+
+<Accordion title="Docker containers won't start">
+  Try cleaning up and rebuilding:
+  
+  ```bash
+  docker compose down
+  docker compose up --build
+  ```
+</Accordion>
+
+<Accordion title="Database connection errors">
+  Make sure your `.env` file has the correct database connection string and that the PostgreSQL container is running:
+  
+  ```bash
+  docker ps
+  ```
+</Accordion>
+
+<Accordion title="Port already in use">
+  If port 3000 is already in use, either:
+  
+  - Stop the other service using that port
+  - Change the port in your Next.js configuration
+</Accordion>
+
+## Next Steps
+
+Now that your environment is set up:
+
+<CardGroup cols={2}>
+  <Card title="Contribution Workflow" icon="code-branch" href="/contributing/workflow">
+    Learn about our issue-first workflow and PR process
+  </Card>
+  
+  <Card title="Guidelines" icon="book" href="/contributing/guidelines">
+    Review code standards and testing requirements
+  </Card>
+</CardGroup>

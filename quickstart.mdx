@@ -1,80 +1,250 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get Walty running in minutes with Docker
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before you begin, ensure you have the following installed:
 
-### Step 1: Set up your local environment
+- **Docker** and **Docker Compose** (Docker Desktop includes both)
+- **Git** for cloning the repository
+
+<Note>
+  Docker Compose V2 is recommended. Verify with `docker compose version`
+</Note>
+
+## Quick Setup
+
+Get Walty running locally in under 5 minutes:
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the Walty repository and navigate to the project directory:
+    
+    ```bash
+    git clone https://github.com/ignaciogarcia-dev/walty.git
+    cd walty
+    ```
+  </Step>
+  
+  <Step title="Configure Environment Variables">
+    Copy the example environment file and edit it with your configuration:
+    
+    ```bash
+    cp .env.example .env
+    ```
+    
+    At minimum, you need to set these required variables in `.env`:
+    
+    ```bash .env
+    # Database connection (default works with Docker Compose)
+    DATABASE_URL=postgresql://wallet:wallet@db:5432/wallet
+    
+    # Generate with: openssl rand -base64 32
+    JWT_SECRET=your-secret-key-here-change-this-in-production
+    
+    # Generate with: openssl rand -base64 32
+    SERVER_PEPPER=your-pepper-key-here-change-this-in-production
+    
+    # Get free API key at https://www.alchemy.com/
+    ALCHEMY_API_KEY=your-alchemy-api-key
+    
+    # Get free API key at https://0x.org/docs/api
+    ZEROX_API_KEY=your-0x-api-key
+    ```
+    
+    <Warning>
+      Generate secure secrets for `JWT_SECRET` and `SERVER_PEPPER` using:
+      ```bash
+      openssl rand -base64 32
+      ```
+      Never use the example values in production!
+    </Warning>
+  </Step>
+  
+  <Step title="Start with Docker Compose">
+    Build and start all services (Next.js app + PostgreSQL):
+    
+    ```bash
+    docker compose up --build
+    ```
+    
+    This command will:
+    - Build the Next.js application container
+    - Start PostgreSQL database
+    - Wait for database to be ready
+    - Run database migrations automatically
+    - Start the application on port 3000
+    
+    <Note>
+      First build takes 2-3 minutes. Subsequent starts are much faster.
+    </Note>
+    
+    You should see output like:
+    ```
+    ✓ Database schema synchronized
+    Database ready
+    Starting app...
+    ▲ Next.js 16.1.6
+    - Local: http://localhost:3000
+    ```
+  </Step>
+  
+  <Step title="Access the Application">
+    Open your browser and navigate to:
+    
+    ```
+    http://localhost:3000
+    ```
+    
+    You should see the Walty welcome screen. You can now:
+    - Create a new wallet
+    - Import an existing wallet with a seed phrase
+    - Start managing your crypto assets
+  </Step>
+</Steps>
+
+## What's Running?
+
+Docker Compose starts two services:
+
+| Service | Purpose | Port |
+|---------|---------|------|
+| `app` | Next.js application | 3000 |
+| `db` | PostgreSQL database | 5432 |
+
+<Note>
+  Database migrations run automatically when the app container starts via the `entrypoint.sh` script.
+</Note>
+
+## Common Commands
+
+<CodeGroup>
+```bash Start Stack
+# Start all services in foreground
+docker compose up
+
+# Start all services in background
+docker compose up -d
+
+# Rebuild and start (after code changes)
+docker compose up --build
+```
+
+```bash Stop Stack
+# Stop all services
+docker compose down
+
+# Stop and remove volumes (deletes database data)
+docker compose down -v
+```
+
+```bash View Logs
+# Follow all logs
+docker compose logs -f
+
+# Follow app logs only
+docker compose logs -f app
+
+# Follow database logs only
+docker compose logs -f db
+```
+
+```bash Check Status
+# View running services
+docker compose ps
+
+# View service stats (CPU, memory)
+docker stats
+```
+</CodeGroup>
+
+## Verify Installation
+
+After starting Walty, verify everything is working:
+
+1. **Check Services**: Run `docker compose ps` - both `app` and `db` should show "running"
+2. **Access UI**: Navigate to `http://localhost:3000` in your browser
+3. **Create Wallet**: Try creating a new wallet to verify full functionality
+4. **Check Logs**: Run `docker compose logs -f app` to see application logs
+
+## Troubleshooting
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+  <Accordion title="Port 3000 already in use">
+    Another service is using port 3000. Either:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+    1. Stop the conflicting service
+    2. Change the port in `docker-compose.yml`:
+       ```yaml
+       app:
+         ports:
+           - "3001:3000"  # Use port 3001 instead
+       ```
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+  
+  <Accordion title="Database connection failed">
+    The app can't connect to PostgreSQL. Check:
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+    1. Database service is running: `docker compose ps`
+    2. `DATABASE_URL` in `.env` matches the compose configuration:
+       ```bash
+       DATABASE_URL=postgresql://wallet:wallet@db:5432/wallet
+       ```
+    3. View database logs: `docker compose logs db`
+  </Accordion>
+  
+  <Accordion title="Migration failed">
+    Database migration errors usually mean:
+    
+    1. Database isn't ready yet - wait a few seconds and check logs
+    2. Corrupted database state - remove and recreate:
+       ```bash
+       docker compose down -v
+       docker compose up --build
+       ```
+  </Accordion>
+  
+  <Accordion title="Cannot fetch balances or prices">
+    This usually means missing or invalid API keys. Verify in `.env`:
+    
+    - `ALCHEMY_API_KEY` - Required for blockchain data
+    - `ZEROX_API_KEY` - Required for token swaps
+    - `COINGECKO_API_KEY` - Optional but recommended for better rate limits
+    
+    Get free API keys from the respective providers and restart:
+    ```bash
+    docker compose restart app
+    ```
+  </Accordion>
+  
+  <Accordion title="Build fails with 'pnpm not found'">
+    The Dockerfile uses corepack to enable pnpm. If build fails:
+    
+    1. Ensure you're using Node.js 20+ base image
+    2. Clear Docker cache and rebuild:
+       ```bash
+       docker compose build --no-cache
+       docker compose up
+       ```
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
+## Next Steps
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
+Now that Walty is running:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Learn about all deployment options and advanced configuration
+  </Card>
+  
+  <Card title="Environment Variables" icon="gear" href="/installation#environment-variables">
+    Detailed documentation of all configuration options
+  </Card>
 </CardGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  For production deployments, see the full [Installation Guide](/installation) for security best practices and configuration options.
 </Note>

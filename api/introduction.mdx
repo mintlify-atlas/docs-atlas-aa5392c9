@@ -1,0 +1,148 @@
+---
+title: 'API Overview'
+description: 'Introduction to the Walty REST API'
+---
+
+## Introduction
+
+The Walty API is a REST-based API that provides programmatic access to wallet management, payment requests, transactions, and user account functionality. All API endpoints are served from the same origin as the web application.
+
+## Base URL
+
+The API runs on the same server as the Walty application. All API routes are prefixed with `/api`:
+
+```
+https://your-domain.com/api
+```
+
+For local development:
+
+```
+http://localhost:3000/api
+```
+
+## Request Format
+
+All API requests expecting a body should use JSON format with the `Content-Type: application/json` header.
+
+```bash
+curl -X POST https://your-domain.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"securepass123"}'
+```
+
+## Response Format
+
+### Success Responses
+
+Successful API responses return JSON with a 2xx status code. Common patterns include:
+
+**Simple Success**
+```json
+{
+  "ok": true
+}
+```
+
+**Data Response**
+```json
+{
+  "user": {
+    "userId": 123,
+    "email": "user@example.com",
+    "userType": "person"
+  }
+}
+```
+
+### Error Responses
+
+Error responses include an `error` field with a descriptive message:
+
+```json
+{
+  "error": "invalid credentials"
+}
+```
+
+## HTTP Status Codes
+
+The API uses standard HTTP status codes to indicate success or failure:
+
+<ResponseField name="200" type="OK">
+  Request succeeded. Response body contains the requested data.
+</ResponseField>
+
+<ResponseField name="400" type="Bad Request">
+  Invalid request parameters or malformed request body.
+  
+  Common errors:
+  - `invalid-email-or-password` - Email format invalid or password too short
+  - `Invalid username` - Username doesn't meet requirements
+</ResponseField>
+
+<ResponseField name="401" type="Unauthorized">
+  Authentication required or invalid credentials.
+  
+  Common errors:
+  - `invalid credentials` - Login failed
+  - `invalid token` - JWT token missing or expired
+  - `Unauthorized` - Protected endpoint accessed without authentication
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Requested resource doesn't exist.
+  
+  Common errors:
+  - `not found` - User or resource not found
+</ResponseField>
+
+<ResponseField name="409" type="Conflict">
+  Request conflicts with existing data.
+  
+  Common errors:
+  - `email-already-in-use` - Email already registered
+  - `Username taken` - Username already claimed
+</ResponseField>
+
+<ResponseField name="429" type="Too Many Requests">
+  Rate limit exceeded. Wait before retrying.
+  
+  Error:
+  - `Too many requests` - IP-based rate limiting triggered
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Unexpected server error.
+  
+  Error:
+  - `unexpected-error` - Database or server error
+</ResponseField>
+
+## Rate Limiting
+
+<Warning>
+  Authentication endpoints (`/api/auth/login` and `/api/auth/register`) implement rate limiting based on the client's IP address to prevent abuse. If you exceed the rate limit, you'll receive a `429 Too Many Requests` response.
+</Warning>
+
+Rate-limited endpoints identify clients using the `x-forwarded-for` header when behind a proxy, or the direct IP address otherwise.
+
+## Authentication
+
+Most API endpoints require authentication using JWT tokens stored in HTTP-only cookies. See the [Authentication](/api/authentication) guide for details on registering users and obtaining authentication tokens.
+
+## API Sections
+
+The Walty API is organized into the following sections:
+
+- **Authentication** - User registration, login, and logout
+- **User Management** - Profile data, username management, account type
+- **Wallet** - Wallet addresses, backup, and linking
+- **Transactions** - Transaction history, syncing, and activity
+- **Payment Requests** - Creating and managing payment requests
+- **Swap** - Token swap quotes and pricing
+- **Portfolio** - Asset balances and portfolio data
+
+<Note>
+  All endpoints implement proper CSRF protection and security headers. The API enforces strict Content Security Policy (CSP), X-Frame-Options, and other security measures defined in `middleware.ts:60-62`.
+</Note>

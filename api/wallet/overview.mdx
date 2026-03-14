@@ -1,0 +1,174 @@
+---
+title: 'Wallet API'
+description: 'Manage wallet connections and authentication'
+---
+
+## Overview
+
+The Wallet API provides endpoints for wallet connection workflows, including nonce generation, wallet linking, and challenge-based authentication.
+
+<Note>
+All wallet endpoints require authentication. Include a valid session token in your request headers.
+</Note>
+
+---
+
+## Generate Nonce
+
+<RequestExample>
+```bash cURL
+curl -X POST https://api.walty.com/api/wallet/nonce \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+```
+</RequestExample>
+
+### POST /api/wallet/nonce
+
+Generates a cryptographic nonce for wallet linking. The nonce expires after 5 minutes.
+
+**Authentication:** Required
+
+**Request Body:** None
+
+**Response**
+
+<ResponseField name="nonce" type="string" required>
+  A 32-character hexadecimal string used for wallet verification. Valid for 5 minutes.
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "nonce": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345"
+}
+```
+</ResponseExample>
+
+**Error Responses**
+
+<ResponseField name="error" type="string">
+  Error message when request fails
+</ResponseField>
+
+- `401 Unauthorized` - Authentication required or invalid session token
+
+---
+
+## Link Wallet
+
+<RequestExample>
+```bash cURL
+curl -X POST https://api.walty.com/api/wallet/link \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "0x1234567890abcdef1234567890abcdef12345678",
+    "signature": "0xabc123...",
+    "nonce": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345"
+  }'
+```
+</RequestExample>
+
+### POST /api/wallet/link
+
+Links a wallet address to the authenticated user account by verifying a signed message.
+
+**Authentication:** Required
+
+**Request Body**
+
+<ParamField body="address" type="string" required>
+  The Ethereum wallet address to link (checksummed format)
+</ParamField>
+
+<ParamField body="signature" type="string" required>
+  Signature of the message: `Link wallet {address} nonce {nonce}`
+</ParamField>
+
+<ParamField body="nonce" type="string" required>
+  The nonce obtained from POST /api/wallet/nonce
+</ParamField>
+
+**Response**
+
+<ResponseField name="ok" type="boolean">
+  Returns `true` when wallet is successfully linked
+</ResponseField>
+
+<ResponseExample>
+```json Success Response
+{
+  "ok": true
+}
+```
+</ResponseExample>
+
+**Error Responses**
+
+- `400 Bad Request` - Invalid or expired nonce
+  ```json
+  { "error": "Invalid nonce" }
+  ```
+
+- `401 Unauthorized` - Authentication required or invalid session token
+  ```json
+  { "error": "Unauthorized" }
+  ```
+
+- `403 Forbidden` - Invalid signature
+  ```json
+  { "error": "Invalid signature" }
+  ```
+
+<Note>
+The message to sign must follow the exact format: `Link wallet {address} nonce {nonce}`. The signature is verified using viem's `verifyMessage` function.
+</Note>
+
+---
+
+## Get Challenge
+
+<RequestExample>
+```bash cURL
+curl -X GET https://api.walty.com/api/wallet/challenge \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+```
+</RequestExample>
+
+### GET /api/wallet/challenge
+
+Generates a deterministic challenge string for the authenticated user. This challenge is derived from the user ID and server pepper using HMAC-SHA256.
+
+**Authentication:** Required
+
+**Request Body:** None
+
+**Response**
+
+<ResponseField name="challenge" type="string" required>
+  A 64-character hexadecimal HMAC-SHA256 hash that serves as a deterministic challenge for the user
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "challenge": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+}
+```
+</ResponseExample>
+
+**Error Responses**
+
+- `401 Unauthorized` - Authentication required or invalid session token
+  ```json
+  { "error": "Unauthorized" }
+  ```
+
+- `500 Internal Server Error` - Server pepper not configured
+  ```json
+  { "error": "Server misconfigured" }
+  ```
+
+<Note>
+The challenge is deterministic for each user and remains constant. It's generated using `HMAC-SHA256(SERVER_PEPPER, userId)`.
+</Note>

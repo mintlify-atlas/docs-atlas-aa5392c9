@@ -1,0 +1,192 @@
+---
+title: 'Wallet Backup'
+description: 'Store and retrieve encrypted wallet backups'
+---
+
+## Overview
+
+The Wallet Backup API enables users to securely store and retrieve encrypted wallet data. Backups are encrypted client-side before being sent to the server.
+
+<Note>
+All backup endpoints require authentication. The wallet address must be linked to your account before creating a backup.
+</Note>
+
+---
+
+## Get Backup
+
+<RequestExample>
+```bash cURL
+curl -X GET https://api.walty.com/api/wallet/backup \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+```
+</RequestExample>
+
+### GET /api/wallet/backup
+
+Retrieves the encrypted wallet backup for the authenticated user.
+
+**Authentication:** Required
+
+**Request Body:** None
+
+**Response**
+
+<ResponseField name="backup" type="object | null" required>
+  The encrypted backup object, or `null` if no backup exists
+  
+  <Expandable title="Backup Object">
+    <ResponseField name="ciphertext" type="string">
+      The encrypted wallet data
+    </ResponseField>
+    
+    <ResponseField name="iv" type="string">
+      Initialization vector used for encryption
+    </ResponseField>
+    
+    <ResponseField name="salt" type="string">
+      Salt used for key derivation
+    </ResponseField>
+    
+    <ResponseField name="version" type="string">
+      Backup format version identifier
+    </ResponseField>
+    
+    <ResponseField name="walletAddress" type="string">
+      The Ethereum address of the backed-up wallet
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Response with Backup
+{
+  "backup": {
+    "ciphertext": "U2FsdGVkX1+jYvNZ5C...",
+    "iv": "a1b2c3d4e5f67890",
+    "salt": "1a2b3c4d5e6f7890",
+    "version": "1",
+    "walletAddress": "0x1234567890abcdef1234567890abcdef12345678"
+  }
+}
+```
+
+```json No Backup
+{
+  "backup": null
+}
+```
+</ResponseExample>
+
+**Error Responses**
+
+- `401 Unauthorized` - Authentication required or invalid session token
+  ```json
+  { "error": "Unauthorized" }
+  ```
+
+---
+
+## Create or Update Backup
+
+<RequestExample>
+```bash cURL
+curl -X POST https://api.walty.com/api/wallet/backup \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ciphertext": "U2FsdGVkX1+jYvNZ5C...",
+    "iv": "a1b2c3d4e5f67890",
+    "salt": "1a2b3c4d5e6f7890",
+    "version": "1",
+    "walletAddress": "0x1234567890abcdef1234567890abcdef12345678"
+  }'
+```
+</RequestExample>
+
+### POST /api/wallet/backup
+
+Stores an encrypted wallet backup. If a backup already exists for the user, it will be replaced.
+
+**Authentication:** Required
+
+**Request Body**
+
+<ParamField body="ciphertext" type="string" required>
+  The encrypted wallet data (encrypted client-side)
+</ParamField>
+
+<ParamField body="iv" type="string" required>
+  Initialization vector used for AES encryption
+</ParamField>
+
+<ParamField body="salt" type="string" required>
+  Salt used for key derivation (PBKDF2 or similar)
+</ParamField>
+
+<ParamField body="version" type="string" required>
+  Backup format version identifier (e.g., "1")
+</ParamField>
+
+<ParamField body="walletAddress" type="string" required>
+  The Ethereum wallet address being backed up. Must be linked to your account.
+</ParamField>
+
+**Response**
+
+<ResponseField name="ok" type="boolean">
+  Returns `true` when backup is successfully stored
+</ResponseField>
+
+<ResponseExample>
+```json Success Response
+{
+  "ok": true
+}
+```
+</ResponseExample>
+
+**Error Responses**
+
+- `400 Bad Request` - Missing required fields
+  ```json
+  { "error": "Missing fields" }
+  ```
+
+- `401 Unauthorized` - Authentication required or invalid session token
+  ```json
+  { "error": "Unauthorized" }
+  ```
+
+- `403 Forbidden` - Wallet address not linked to account
+  ```json
+  { "error": "Address not linked to account" }
+  ```
+
+<Note>
+The server does not have access to the encryption key. All encryption and decryption must be performed client-side. The `walletAddress` must be linked to your account via the `/api/wallet/link` endpoint before creating a backup.
+</Note>
+
+---
+
+## Security Considerations
+
+<Warning>
+The backup data is encrypted client-side. The server stores only the encrypted ciphertext, IV, and salt. Never send unencrypted private keys or mnemonics to the server.
+</Warning>
+
+**Best Practices:**
+
+- Encrypt wallet data using AES-256-GCM or similar strong encryption
+- Derive encryption keys from user passwords using PBKDF2, scrypt, or Argon2
+- Use a unique, random IV for each backup
+- Use a sufficiently long salt (at least 16 bytes)
+- Verify the wallet address is linked before creating a backup
+
+**Backup Flow:**
+
+1. Link wallet address: `POST /api/wallet/link`
+2. Encrypt wallet data client-side with user password
+3. Store backup: `POST /api/wallet/backup`
+4. Retrieve when needed: `GET /api/wallet/backup`
+5. Decrypt client-side with user password

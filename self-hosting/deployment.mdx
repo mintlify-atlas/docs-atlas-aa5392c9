@@ -1,0 +1,363 @@
+---
+title: Deployment Guide
+description: Production deployment guide, scaling, and best practices for self-hosting Walty
+---
+
+## Overview
+
+This guide covers deploying Walty in production environments, including security considerations, scaling strategies, and operational best practices.
+
+## Prerequisites
+
+Before deploying Walty, ensure you have:
+
+- Docker and Docker Compose installed
+- PostgreSQL 16 or higher (included in Docker setup)
+- SSL/TLS certificates for HTTPS
+- Required API keys (see [Environment Variables](/self-hosting/environment))
+
+## Production Deployment
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/your-org/walty.git
+    cd walty
+    ```
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example environment file and configure it:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Edit `.env` and set all required variables. See the complete [environment variable reference](/self-hosting/environment).
+
+    <Warning>
+      **Critical security settings:**
+      - Generate unique secrets for `JWT_SECRET` and `SERVER_PEPPER`
+      - Use strong database passwords
+      - Never commit `.env` files to version control
+    </Warning>
+  </Step>
+
+  <Step title="Build and start services">
+    ```bash
+    docker-compose up -d
+    ```
+
+    The application will:
+    1. Build the Docker image
+    2. Start PostgreSQL database
+    3. Wait for database readiness
+    4. Run database migrations automatically
+    5. Start the application on port 3000
+  </Step>
+
+  <Step title="Verify deployment">
+    Check service health:
+
+    ```bash
+    docker-compose ps
+    docker-compose logs app
+    ```
+
+    Access the application at `http://localhost:3000`
+  </Step>
+</Steps>
+
+## Security Best Practices
+
+### Secret Generation
+
+Generate cryptographically secure secrets for production:
+
+<CodeGroup>
+```bash JWT_SECRET
+openssl rand -base64 32
+```
+
+```bash SERVER_PEPPER
+openssl rand -base64 32
+```
+
+```bash PAYMENTS_RECONCILE_SECRET
+openssl rand -base64 32
+```
+</CodeGroup>
+
+### HTTPS Configuration
+
+<Warning>
+Always use HTTPS in production to protect user credentials and wallet data.
+</Warning>
+
+Recommended approaches:
+
+1. **Reverse Proxy (Recommended)**
+   - Use nginx or Caddy in front of Walty
+   - Handles SSL termination
+   - Provides additional security headers
+
+2. **Load Balancer**
+   - AWS Application Load Balancer
+   - Google Cloud Load Balancer
+   - Azure Application Gateway
+
+Example nginx configuration:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name wallet.yourdomain.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+### Cookie Security
+
+In production (`NODE_ENV=production`), secure cookies are automatically enabled. For local HTTPS development, set:
+
+```bash
+COOKIE_SECURE=true
+```
+
+### Database Security
+
+- Use strong passwords for `POSTGRES_PASSWORD`
+- Restrict database port exposure (don't expose 5432 publicly)
+- Enable PostgreSQL SSL connections in production
+- Regular backups with encryption
+
+## Scaling Considerations
+
+### Horizontal Scaling
+
+Walty can be horizontally scaled with multiple app instances:
+
+```yaml docker-compose.yml
+services:
+  app:
+    build: .
+    deploy:
+      replicas: 3
+    ports:
+      - "3000-3002:3000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    # Single database instance
+```
+
+### Database Performance
+
+For production workloads:
+
+1. **Connection Pooling**
+   - PostgreSQL connection pooling is handled by the application
+   - Consider PgBouncer for high-traffic deployments
+
+2. **Database Resources**
+   - Allocate sufficient memory (minimum 2GB recommended)
+   - Use SSD storage for better performance
+   - Monitor query performance and add indexes as needed
+
+3. **Managed Database Services**
+   - AWS RDS PostgreSQL
+   - Google Cloud SQL
+   - Azure Database for PostgreSQL
+   - Supabase
+
+   Update `DATABASE_URL` to point to your managed service:
+
+   ```bash
+   DATABASE_URL=postgresql://user:password@your-db-host:5432/walty
+   ```
+
+### Resource Requirements
+
+**Minimum (small deployment):**
+- 1 CPU core
+- 2GB RAM
+- 10GB storage
+
+**Recommended (production):**
+- 2+ CPU cores
+- 4GB+ RAM
+- 50GB+ SSD storage
+- Load balancer for high availability
+
+## Monitoring and Maintenance
+
+### Health Checks
+
+Monitor these endpoints:
+
+- Application: `http://localhost:3000`
+- Database: Check PostgreSQL connectivity
+
+### Log Management
+
+View application logs:
+
+```bash
+# View real-time logs
+docker-compose logs -f app
+
+# View database logs
+docker-compose logs -f db
+
+# Export logs
+docker-compose logs app > app.log
+```
+
+### Database Backups
+
+Automate PostgreSQL backups:
+
+```bash
+# Manual backup
+docker-compose exec db pg_dump -U wallet wallet > backup.sql
+
+# Restore from backup
+docker-compose exec -T db psql -U wallet wallet < backup.sql
+```
+
+Schedule regular backups using cron:
+
+```bash
+# Daily backup at 2 AM
+0 2 * * * cd /path/to/walty && docker-compose exec -T db pg_dump -U wallet wallet | gzip > backups/backup-$(date +\%Y\%m\%d).sql.gz
+```
+
+### Updates and Migrations
+
+<Steps>
+  <Step title="Pull latest changes">
+    ```bash
+    git pull origin main
+    ```
+  </Step>
+
+  <Step title="Rebuild containers">
+    ```bash
+    docker-compose build
+    ```
+  </Step>
+
+  <Step title="Restart services">
+    ```bash
+    docker-compose down
+    docker-compose up -d
+    ```
+
+    <Note>
+    Database migrations run automatically on startup via `entrypoint.sh`
+    </Note>
+  </Step>
+
+  <Step title="Verify">
+    ```bash
+    docker-compose logs -f app
+    ```
+
+    Look for:
+    - "Running DB migrations..."
+    - "✓ Database schema synchronized"
+    - "Starting app..."
+  </Step>
+</Steps>
+
+## Payment Reconciliation
+
+Walty includes an internal payment reconciliation endpoint that must be triggered by an external cron job.
+
+### Setup External Cron
+
+Create a cron job that sends the reconciliation secret:
+
+```bash
+# Run every hour
+0 * * * * curl -X POST https://your-walty-instance.com/api/reconcile \
+  -H "x-reconcile-secret: YOUR_PAYMENTS_RECONCILE_SECRET" \
+  -H "Content-Type: application/json"
+```
+
+<Warning>
+Set `PAYMENTS_RECONCILE_SECRET` in your `.env` file and keep it secure. The endpoint will reject requests without the correct secret.
+</Warning>
+
+## Troubleshooting
+
+### Application Won't Start
+
+1. Check logs: `docker-compose logs app`
+2. Verify environment variables are set correctly
+3. Ensure database is running: `docker-compose ps db`
+4. Check database connectivity: `docker-compose exec app ping db`
+
+### Migration Failures
+
+If migrations fail:
+
+```bash
+# View migration logs
+docker-compose logs app | grep migration
+
+# Manually run migrations
+docker-compose exec app pnpm drizzle-kit push
+```
+
+### Performance Issues
+
+- Check resource usage: `docker stats`
+- Monitor database queries
+- Review application logs for errors
+- Verify API keys are valid (Alchemy, 0x)
+
+### API Key Issues
+
+<Note>
+Without `ALCHEMY_API_KEY` and `ZEROX_API_KEY`, core functionality will fail. Public RPC endpoints are unreliable for production use.
+</Note>
+
+Verify API keys:
+- Alchemy: https://dashboard.alchemy.com/
+- 0x: https://0x.org/docs/api
+- CoinGecko: https://www.coingecko.com/en/api
+- 1inch: https://portal.1inch.dev/
+
+## Production Checklist
+
+Before going live:
+
+- [ ] All required environment variables configured
+- [ ] Secrets generated with `openssl rand -base64 32`
+- [ ] HTTPS enabled with valid SSL certificates
+- [ ] Database backups automated
+- [ ] Monitoring and alerting configured
+- [ ] Resource limits set appropriately
+- [ ] API keys obtained and tested
+- [ ] Payment reconciliation cron configured
+- [ ] Security headers configured (via reverse proxy)
+- [ ] Database not exposed to public internet

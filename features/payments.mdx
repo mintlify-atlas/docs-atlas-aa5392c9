@@ -1,0 +1,499 @@
+---
+title: 'Payment Requests'
+description: 'Accept cryptocurrency payments with QR codes, expiration timers, and automatic reconciliation for business accounts'
+---
+
+# Payment Requests
+
+Walty's payment request system enables businesses to accept cryptocurrency payments through QR codes and shareable links. Built for point-of-sale scenarios, it includes automatic on-chain reconciliation, expiration handling, and split payment support.
+
+## Overview
+
+Payment requests are designed for merchant use cases:
+
+- **QR Code Generation** - Instant payment links customers can scan
+- **Automatic Expiration** - Requests expire after 15 minutes by default
+- **On-Chain Monitoring** - Automatically detects incoming payments
+- **Confirmation Tracking** - Waits for required confirmations (2 by default)
+- **Split Payments** - Multiple customers can contribute to a single request
+
+<Info>
+  Payment requests currently support USDC and USDT on Polygon (Chain ID: 137) for low fees and fast confirmations.
+</Info>
+
+## Creating Payment Requests
+
+Business accounts can create payment requests through the dashboard:
+
+<Steps>
+  <Step title="Enter Amount">
+    Specify the amount in USD. The system will accept equivalent stablecoin payments.
+
+    ```typescript
+    POST /api/payment-requests
+    
+    {
+      "amountUsd": "25.00",
+      "tokenSymbol": "USDC",
+      "merchantWalletAddress": "0x..."
+    }
+    ```
+  </Step>
+
+  <Step title="Generate Request">
+    The server creates a payment request with:
+    - Unique request ID
+    - Expiration timestamp (15 minutes)
+    - Merchant wallet address
+    - Required confirmations (2)
+
+    ```typescript
+    Response:
+    {
+      "id": "pay_abc123def456",
+      "status": "pending",
+      "chainId": 137,
+      "amountUsd": "25.00",
+      "tokenSymbol": "USDC",
+      "merchantWalletAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+      "expiresAt": "2026-03-14T12:30:00.000Z",
+      "requiredConfirmations": 2
+    }
+    ```
+  </Step>
+
+  <Step title="Display QR Code">
+    Generate a QR code encoding the payment URL:
+
+    ```typescript
+    const paymentUrl = `https://app.walty.io/pay/${requestId}`
+    
+    <QRCodeSVG 
+      value={paymentUrl} 
+      size={200} 
+      level="M" 
+    />
+    ```
+  </Step>
+
+  <Step title="Monitor Status">
+    Poll the request status endpoint every 3 seconds:
+
+    ```typescript
+    GET /api/payment-requests/{requestId}
+    
+    // Status transitions:
+    // pending → confirming → paid
+    // pending → expired
+    ```
+  </Step>
+</Steps>
+
+## Payment Request Types
+
+```typescript
+export type PaymentRequestStatus = 
+  | "pending"      // Awaiting payment
+  | "confirming"   // Payment detected, awaiting confirmations
+  | "paid"         // Payment confirmed
+  | "expired"      // Request expired (15 min passed)
+  | "cancelled"    // Manually cancelled by merchant
+```
+
+### Standard Payment Request
+
+```typescript
+export type PaymentRequestView = {
+  id: string
+  status: PaymentRequestStatus
+  chainId: number
+  amountUsd: string
+  tokenSymbol: string
+  merchantWalletAddress: string
+  expiresAt: string
+  confirmations: number
+  requiredConfirmations: number
+  txHash: string | null
+}
+```
+
+### Split Payment Request
+
+Allows multiple customers to contribute:
+
+```typescript
+export type PaymentRequestView = {
+  // ... standard fields
+  isSplitPayment: true
+  totalPaidUsd: "15.50"          // Sum of contributions
+  remainingAmountUsd: "9.50"     // Amount still needed
+  contributions: [
+    {
+      id: 1,
+      paymentRequestId: "pay_abc123",
+      txHash: "0x...",
+      payerAddress: "0x...",
+      amountToken: "10.000000",
+      amountUsd: "10.00",
+      tokenSymbol: "USDC",
+      confirmations: 2,
+      status: "confirmed"
+    },
+    // ... more contributions
+  ]
+}
+```
+
+## Customer Payment Flow
+
+When a customer scans the QR code:
+
+<Steps>
+  <Step title="Landing Page">
+    Customer sees payment details without needing to log in:
+
+    ```tsx
+    <div className="rounded-4xl border bg-card p-6">
+      <div className="text-center">
+        <p className="text-3xl font-bold">${request.amountUsd}</p>
+        <p className="text-muted-foreground">
+          {request.tokenSymbol} · Polygon
+        </p>
+      </div>
+
+      <div className="rounded-2xl border bg-secondary/20 p-3">
+        <p className="text-xs text-muted-foreground">
+          Merchant Address
+        </p>
+        <p className="font-mono text-sm">
+          {truncateAddress(request.merchantWalletAddress)}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs">Status</p>
+          <p className="text-sm font-medium">
+            {getPaymentRequestStatusLabel(status)}
+          </p>
+        </div>
+        <span className="font-mono text-xs">
+          {countdown ? `Expires in ${countdown.label}` : ""}
+        </span>
+      </div>
+
+      <Button onClick={handlePay}>
+        {authed ? "Pay Now" : "Sign In to Pay"}
+      </Button>
+    </div>
+    ```
+  </Step>
+
+  <Step title="Authentication">
+    If not logged in, customer is redirected to onboarding:
+
+    ```typescript
+    router.push(`/onboarding?next=/pay/${requestId}`)
+    ```
+
+    After login, they're returned to the payment page.
+  </Step>
+
+  <Step title="Payment Form">
+    Pre-filled send form with payment details:
+
+    ```tsx
+    <SendForm
+      mode="pay"
+      selectedChainId={request.chainId}  // 137 (Polygon)
+      // Pre-fill recipient and amount from request
+    />
+    ```
+  </Step>
+
+  <Step title="Submit Payment">
+    Customer confirms and sends the transaction:
+
+    ```typescript
+    // Transaction sent to merchant address
+    await onSend(
+      token,                              // USDC or USDT
+      request.merchantWalletAddress,      // Destination
+      request.amountUsd,                  // Amount
+      request.chainId                     // 137
+    )
+    ```
+  </Step>
+
+  <Step title="Wait for Confirmation">
+    Payment status updates automatically:
+
+    - Transaction broadcast → `confirming` status
+    - 1/2 confirmations → Shows progress
+    - 2/2 confirmations → `paid` status ✓
+  </Step>
+</Steps>
+
+## Countdown Timer
+
+Payment requests show real-time countdown:
+
+```typescript
+export function getPaymentRequestCountdown(
+  expiresAt: string,
+  now: number = Date.now()
+): { expired: boolean; label: string; seconds: number } {
+  const seconds = Math.max(
+    0, 
+    Math.floor((new Date(expiresAt).getTime() - now) / 1000)
+  )
+  
+  const minutesLabel = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0")
+  const secondsLabel = (seconds % 60)
+    .toString()
+    .padStart(2, "0")
+
+  return {
+    expired: seconds === 0,
+    label: `${minutesLabel}:${secondsLabel}`,
+    seconds,
+  }
+}
+```
+
+**Usage:**
+
+```tsx
+const [now, setNow] = useState(Date.now())
+
+useEffect(() => {
+  const clockId = setInterval(() => setNow(Date.now()), 1000)
+  return () => clearInterval(clockId)
+}, [])
+
+const countdown = getPaymentRequestCountdown(request.expiresAt, now)
+
+<span className="font-mono text-xs">
+  {countdown.expired 
+    ? "Expired" 
+    : `Expires in ${countdown.label}`
+  }
+</span>
+```
+
+## Automatic Reconciliation
+
+Walty's backend automatically monitors the blockchain for payments:
+
+```typescript
+// Runs every 30 seconds via cron job
+export const PAYMENT_RECONCILE_INTERVAL_SECONDS = 30
+
+// Reconciliation process:
+// 1. Fetch all pending/confirming payment requests
+// 2. Query blockchain for transactions to merchant addresses
+// 3. Match transactions to requests by:
+//    - Recipient address
+//    - Token (USDC/USDT)
+//    - Amount (within tolerance)
+//    - Timestamp (after request creation)
+// 4. Update request status and confirmations
+// 5. Mark as paid when confirmations >= requiredConfirmations
+```
+
+**Configuration:**
+
+```typescript
+export const PAYMENT_CHAIN_ID = 137  // Polygon
+export const PAYMENT_EXPIRY_MINUTES = 15
+export const PAYMENT_REQUIRED_CONFIRMATIONS = 2
+export const PAYMENT_ALLOWED_TOKENS = ["USDC", "USDT"] as const
+```
+
+## Payment Status Helpers
+
+```typescript
+export function getPaymentRequestStatus(
+  request: Pick<PaymentRequestView, "status" | "expiresAt">,
+  now: number = Date.now()
+): PaymentRequestStatus {
+  if (request.status === "pending" && 
+      new Date(request.expiresAt).getTime() <= now) {
+    return "expired"
+  }
+  return request.status
+}
+
+export function isPaymentRequestActive(
+  request: Pick<PaymentRequestView, "status" | "expiresAt">,
+  now: number = Date.now()
+): boolean {
+  const status = getPaymentRequestStatus(request, now)
+  return status === "pending" || status === "confirming"
+}
+```
+
+## Share Payment Link
+
+Merchants can share payment links via multiple channels:
+
+```typescript
+export function getPaymentShareText(
+  request: Pick<PaymentRequestView, "amountUsd" | "tokenSymbol">, 
+  url: string
+): string {
+  return `Pay $${request.amountUsd} ${request.tokenSymbol} with Walty: ${url}`
+}
+
+// Usage:
+const shareText = getPaymentShareText(
+  request, 
+  `https://app.walty.io/pay/${request.id}`
+)
+
+// Share via:
+// - SMS/iMessage
+// - WhatsApp
+// - Email
+// - QR code (most common)
+```
+
+## Confirmation Tracking
+
+Payments require blockchain confirmations before being marked as paid:
+
+```tsx
+<div className="flex items-center justify-between">
+  <div>
+    <p className="text-xs">Status</p>
+    <p className="text-sm font-medium">
+      {status === "confirming" 
+        ? "Payment Detected"
+        : getPaymentRequestStatusLabel(status)
+      }
+    </p>
+  </div>
+  {status === "confirming" && (
+    <span className="font-mono text-xs text-amber-600">
+      {request.confirmations}/{request.requiredConfirmations} confirmations
+    </span>
+  )}
+</div>
+```
+
+<Note>
+  Polygon confirmations are typically very fast (2-5 seconds each). Most payments complete within 30 seconds.
+</Note>
+
+## Polling Intervals
+
+Different polling rates for different contexts:
+
+```typescript
+// Active payment page (customer/merchant viewing)
+export const PAYMENT_MODAL_POLL_INTERVAL_MS = 3_000  // 3 seconds
+
+// Dashboard list view
+export const PAYMENT_HOME_POLL_INTERVAL_MS = 5_000   // 5 seconds
+
+// Backend reconciliation
+export const PAYMENT_RECONCILE_INTERVAL_SECONDS = 30  // 30 seconds
+```
+
+**Implementation:**
+
+```typescript
+useEffect(() => {
+  if (!request) return
+  if (request.status !== "pending" && request.status !== "confirming") return
+
+  const poll = async () => {
+    const res = await fetch(`/api/payment-requests/${requestId}`)
+    if (res.ok) setRequest(await res.json())
+  }
+
+  const pollId = setInterval(poll, PAYMENT_MODAL_POLL_INTERVAL_MS)
+  return () => clearInterval(pollId)
+}, [request, requestId])
+```
+
+## Error States
+
+Handle various edge cases:
+
+```tsx
+// Request not found
+if (!request) {
+  return (
+    <div className="text-center">
+      <p className="text-lg font-semibold">
+        This payment request is not available
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Request a new QR code from the merchant.
+      </p>
+    </div>
+  )
+}
+
+// Already paid
+if (status === "paid") {
+  return (
+    <div className="text-center">
+      <p className="text-lg font-semibold">
+        This payment has already been completed
+      </p>
+    </div>
+  )
+}
+
+// Expired
+if (status === "expired") {
+  return (
+    <div className="text-center">
+      <p className="text-lg font-semibold">
+        This payment request has expired
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Request a new QR code from the merchant.
+      </p>
+    </div>
+  )
+}
+```
+
+## Business Dashboard
+
+Merchants can view all payment requests:
+
+- **Active Requests** - Pending/confirming payments
+- **Completed** - Successfully paid requests
+- **Expired/Cancelled** - Failed payment attempts
+- **Request History** - All past requests with filters
+
+<Warning>
+  Payment requests expire after 15 minutes for security. Merchants should generate a new request if the customer needs more time.
+</Warning>
+
+## Security Features
+
+<Card title="Payment Verification" icon="shield-check">
+  - On-chain verification ensures payment authenticity
+  - Amount matching prevents underpayment
+  - Address verification confirms correct recipient
+  - Confirmation requirements prevent double-spend attacks
+</Card>
+
+<Card title="Expiration Protection" icon="clock">
+  - Time-limited requests reduce fraud risk
+  - Automatic status updates prevent reuse
+  - Clear expiration countdown for users
+</Card>
+
+## Related Features
+
+- [Transactions](/features/transactions) - Send payment from wallet
+- [Wallet Management](/features/wallet-management) - Secure business wallet
+- [Portfolio](/features/portfolio) - Track received payments

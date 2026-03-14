@@ -1,0 +1,440 @@
+---
+title: 'Transactions'
+description: 'Send tokens, estimate gas fees, and track transaction history across multiple chains'
+---
+
+# Transactions
+
+Walty provides a streamlined interface for sending tokens across all supported EVM chains with built-in gas estimation, username resolution, and real-time transaction tracking.
+
+## Sending Tokens
+
+The send flow is a multi-step process designed for security and clarity:
+
+<Steps>
+  <Step title="Select Token">
+    Choose the token and network you want to send from your portfolio. Tokens are grouped by chain and show available balances.
+
+    ```tsx
+    // User selects from their token positions
+const chainPositions = positions.filter(
+      (p) => p.chainId === selectedChainId
+    )
+    ```
+  </Step>
+
+  <Step title="Enter Recipient">
+    Enter the recipient address or Walty username. The app supports:
+    
+    - **Ethereum addresses** - 0x prefixed, checksum validated
+    - **Walty usernames** - @username format with automatic resolution
+    
+    ```tsx
+    <Input
+      type="text"
+      placeholder="@username or 0x address"
+      value={to}
+      onChange={(e) => setTo(e.target.value)}
+    />
+    ```
+  </Step>
+
+  <Step title="Enter Amount">
+    Specify the amount to send. The UI displays your available balance for reference.
+
+    ```tsx
+    <Input
+      type="text"
+      placeholder="0.00"
+      value={amount}
+      onChange={(e) => setAmount(e.target.value)}
+    />
+    <Badge variant="outline">
+      {parseFloat(balance).toFixed(4)} {token.symbol}
+    </Badge>
+    ```
+  </Step>
+
+  <Step title="Review & Confirm">
+    A confirmation modal shows:
+    - Destination address
+    - Amount and token
+    - Estimated gas fee
+    - Network details
+
+    Gas is estimated before the modal opens to ensure the transaction will succeed.
+  </Step>
+
+  <Step title="Sign & Broadcast">
+    The transaction is signed with your wallet and broadcast to the network. Status updates show:
+    - `pending` - Transaction submitted
+    - `pending_on_chain` - Awaiting confirmation
+    - `confirmed` - Transaction successful
+    - `failed` - Transaction reverted
+  </Step>
+</Steps>
+
+## Username Resolution
+
+Walty supports sending to human-readable usernames instead of long addresses:
+
+```typescript
+// When user enters @alice
+useEffect(() => {
+  if (!to.startsWith("@")) return
+  const username = to.slice(1).trim()
+  if (!username) return
+
+  setUsernameResolving(true)
+  
+  const res = await fetch(
+    `/api/username/resolve?username=${encodeURIComponent(username)}`
+  )
+  
+  if (res.ok) {
+    const { address } = await res.json()
+    setResolvedAddress(address)  // 0x1234...
+    setResolvedUsername(username)
+  } else {
+    setUsernameError("Username not found")
+  }
+}, [to])
+```
+
+**Features:**
+- **Debounced resolution** - 600ms delay to avoid excessive API calls
+- **Real-time validation** - Shows resolved address or error
+- **Visual feedback** - Loading spinner while resolving
+
+```tsx
+{usernameResolving && (
+  <div className="flex items-center gap-1.5 text-xs">
+    <Spinner className="size-3" />
+    Resolving username...
+  </div>
+)}
+
+{resolvedAddress && resolvedUsername && (
+  <p className="text-xs font-mono">
+    @{resolvedUsername} → {resolvedAddress}
+  </p>
+)}
+```
+
+## Gas Estimation
+
+Before every transaction, Walty estimates the gas cost:
+
+```typescript
+async function handleOpenModal() {
+  if (!effectiveTo || !amount || !selectedPosition) return
+  
+  setShowModal(true)
+  
+  try {
+    const estimate = await onEstimateGas(
+      selectedPosition.token, 
+      effectiveTo, 
+      amount, 
+      selectedChainId
+    )
+    setGasEstimate(estimate)  // e.g., "0.0012 ETH"
+  } catch {
+    setGasError("Could not estimate gas")
+  }
+}
+```
+
+**The confirmation modal displays:**
+
+```tsx
+<div className="flex flex-col gap-0.5">
+  <p className="text-xs text-muted-foreground">Estimated Gas</p>
+  {gasEstimate === null && !gasError ? (
+    <div className="flex items-center gap-1.5">
+      <Spinner className="size-3" />
+      Calculating...
+    </div>
+  ) : gasError ? (
+    <p className="text-sm text-destructive">{gasError}</p>
+  ) : (
+    <p className="font-mono text-sm">
+      ~{gasEstimate} {gasSymbol}
+    </p>
+  )}
+</div>
+```
+
+<Note>
+  Gas estimates are approximate. Actual gas used may vary slightly based on network conditions.
+</Note>
+
+## Transaction Confirmation Modal
+
+The modal shows all transaction details before submission:
+
+```tsx
+<Dialog open={showModal} onOpenChange={setShowModal}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Confirm Transaction</DialogTitle>
+    </DialogHeader>
+
+    <div className="flex flex-col gap-4">
+      {/* Network Badge */}
+      <Badge variant="outline">
+        {network?.name ?? "Unknown"} — {selectedChainId}
+      </Badge>
+
+      {/* Destination */}
+      <div>
+        <p className="text-xs text-muted-foreground">Destination</p>
+        {resolvedUsername && (
+          <p className="text-xs">@{resolvedUsername}</p>
+        )}
+        <p className="font-mono text-sm">{effectiveTo}</p>
+      </div>
+
+      {/* Amount */}
+      <div>
+        <p className="text-xs text-muted-foreground">Amount</p>
+        <p className="font-mono font-semibold">
+          {amount} {token.symbol}
+        </p>
+      </div>
+
+      {/* Gas */}
+      <div>
+        <p className="text-xs text-muted-foreground">Estimated Gas</p>
+        <p className="font-mono">~{gasEstimate} {gasSymbol}</p>
+      </div>
+    </div>
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setShowModal(false)}>
+        Cancel
+      </Button>
+      <Button onClick={handleConfirm}>
+        Confirm
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+```
+
+## Transaction Status Display
+
+Real-time status updates during transaction lifecycle:
+
+```tsx
+<TxStatus
+  txStatus={txStatus}
+  txHash={txHash}
+  txError={txError}
+  onResetTx={onResetTx}
+/>
+```
+
+**Status states:**
+
+- **idle** - No active transaction
+- **pending** - Transaction submitted, awaiting broadcast
+- **pending_on_chain** - Transaction broadcast, awaiting confirmation
+- **confirmed** - Transaction successful ✓
+- **failed** - Transaction failed ✗
+
+```typescript
+export type TxStatus = 
+  | "idle" 
+  | "pending" 
+  | "pending_on_chain" 
+  | "confirmed" 
+  | "failed"
+```
+
+## Transaction History
+
+All transactions are recorded and displayed in chronological order:
+
+```typescript
+export type TxRecord = {
+  id: string
+  hash: string
+  chainId: number
+  toAddress: string
+  value: string
+  tokenSymbol: string
+  status: "pending" | "confirmed" | "failed"
+  timestamp: number
+}
+```
+
+### History Component
+
+```tsx
+export function TxHistory({ txHistory }: { txHistory: TxRecord[] }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <h2 className="text-sm font-semibold">History</h2>
+
+      {txHistory.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No transactions yet
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {txHistory.map((tx) => {
+            const network = getNetwork(tx.chainId)
+
+            return (
+              <div key={tx.id} className="rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant={
+                      tx.status === "confirmed" ? "default" :
+                      tx.status === "failed" ? "destructive" : 
+                      "secondary"
+                    }>
+                      {tx.status}
+                    </Badge>
+                    <Badge variant="outline">
+                      {network.name}
+                    </Badge>
+                  </div>
+                  <span className="font-mono text-sm font-semibold">
+                    {tx.value} {tx.tokenSymbol}
+                  </span>
+                </div>
+                <p className="font-mono text-xs text-muted-foreground">
+                  → {tx.toAddress}
+                </p>
+                <ExplorerLink hash={tx.hash} chainId={tx.chainId} />
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+## Explorer Links
+
+Every transaction includes a link to the block explorer:
+
+```tsx
+<ExplorerLink hash={tx.hash} chainId={tx.chainId} />
+
+// Renders:
+// "View on Etherscan" → https://etherscan.io/tx/0x...
+```
+
+**Supported explorers:**
+- Ethereum → etherscan.io
+- Arbitrum → arbiscan.io
+- Base → basescan.org
+- Optimism → optimistic.etherscan.io
+- Polygon → polygonscan.com
+
+## Multi-Chain Support
+
+Transactions work seamlessly across all supported networks:
+
+```typescript
+const NETWORKS: Network[] = [
+  {
+    id: 1,
+    name: "Ethereum",
+    nativeCurrency: { symbol: "ETH", decimals: 18 },
+    explorer: "https://etherscan.io",
+  },
+  {
+    id: 42161,
+    name: "Arbitrum",
+    nativeCurrency: { symbol: "ETH", decimals: 18 },
+    explorer: "https://arbiscan.io",
+  },
+  // ... more networks
+]
+```
+
+**Chain selector:**
+
+```tsx
+<div className="flex gap-1.5 overflow-x-auto">
+  {NETWORKS.map((net) => (
+    <button
+      key={net.id}
+      onClick={() => onChainChange(net.id)}
+      className={selectedChainId === net.id 
+        ? "bg-foreground text-background" 
+        : "bg-muted"
+      }
+    >
+      {net.name}
+    </button>
+  ))}
+</div>
+```
+
+## Error Handling
+
+Comprehensive error states:
+
+```tsx
+// Insufficient balance
+{insufficientBalance && (
+  <p className="text-destructive">
+    Insufficient balance
+  </p>
+)}
+
+// Transaction failed
+{txError && (
+  <p className="text-destructive">
+    {txError}
+  </p>
+)}
+
+// Username not found
+{usernameError && (
+  <p className="text-destructive">
+    {usernameError}
+  </p>
+)}
+```
+
+<Warning>
+  Always verify the recipient address before confirming transactions. Blockchain transactions cannot be reversed.
+</Warning>
+
+## Native vs ERC-20 Transfers
+
+Walty handles both types of transfers:
+
+**Native token (ETH, MATIC):**
+```typescript
+// Simple value transfer
+await walletClient.sendTransaction({
+  to: recipientAddress,
+  value: parseUnits(amount, 18),
+})
+```
+
+**ERC-20 token (USDC, USDT):**
+```typescript
+// Contract call to transfer()
+await walletClient.writeContract({
+  address: tokenAddress,
+  abi: erc20Abi,
+  functionName: "transfer",
+  args: [recipientAddress, parseUnits(amount, tokenDecimals)],
+})
+```
+
+## Related Features
+
+- [Wallet Management](/features/wallet-management) - Secure your signing keys
+- [Portfolio](/features/portfolio) - View available balances
+- [Payments](/features/payments) - Request payments from others

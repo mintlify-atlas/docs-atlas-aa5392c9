@@ -1,97 +1,102 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Welcome to Walty"
+description: "Open-source self-custodial multichain EVM wallet with privacy-first design and client-side signing"
 ---
 
-## Setting up
+## What is Walty?
 
-Get your documentation site up and running in minutes.
+Walty is a free and open-source self-custodial wallet for EVM networks. It helps you manage crypto assets across Ethereum-compatible networks from a single interface with complete control over your private keys.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+The wallet follows a self-custody model: seed material is encrypted locally in the browser and transaction signing happens client-side. No tracking, no analytics, and fully self-hostable.
 
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
+<CardGroup cols={2}>
   <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
   >
-    Edit your docs locally and preview them in real time.
+    Get Walty running in minutes with Docker
   </Card>
   <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
+    title="Installation Guide"
+    icon="download"
+    href="/installation"
   >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+    Detailed setup and configuration options
   </Card>
   <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
-
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
+    title="API Reference"
     icon="code"
-    href="/essentials/code"
+    href="/api/introduction"
   >
-    Add sample code to demonstrate how to use your product.
+    Complete REST API documentation
   </Card>
   <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
+    title="Self-Hosting"
+    icon="server"
+    href="/self-hosting/deployment"
   >
-    Display images and other media.
+    Deploy Walty on your own infrastructure
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Self-Custodial" icon="shield-check">
+    24-word seed phrases with client-side encryption and signing
+  </Card>
+  <Card title="Multi-Chain Support" icon="layer-group">
+    Ethereum, Arbitrum, Base, Optimism, and Polygon
+  </Card>
+  <Card title="Portfolio Tracking" icon="chart-line">
+    Real-time balances and USD values across all networks
+  </Card>
+  <Card title="Token Swaps" icon="arrow-right-arrow-left">
+    Quote aggregation with automatic approval handling
+  </Card>
+  <Card title="Payment Requests" icon="qrcode">
+    Business accounts can generate QR code invoices
+  </Card>
+  <Card title="Privacy First" icon="eye-slash">
+    No tracking, self-hostable, client-side key handling
+  </Card>
+</CardGroup>
+
+## Supported Networks
+
+Walty supports all major EVM-compatible networks:
+
+- **Ethereum** - The original smart contract platform
+- **Arbitrum** - Layer 2 scaling solution for Ethereum
+- **Base** - Coinbase's Layer 2 network
+- **Optimism** - Optimistic rollup for Ethereum
+- **Polygon** - Sidechain for fast, low-cost transactions
+
+## Quick Example
+
+```bash
+# Clone the repository
+git clone https://github.com/ignaciogarcia-dev/walty.git
+cd walty
+
+# Copy environment variables
+cp .env.example .env
+
+# Start with Docker Compose
+docker compose up --build
+
+# Access at http://localhost:3000
+```
+
+## Contributing
+
+Walty is open source and welcomes contributions. Check out our [contributing guidelines](/contributing/getting-started) to get started.
 
 <Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
+  title="View on GitHub"
+  icon="github"
+  href="https://github.com/ignaciogarcia-dev/walty"
 >
-  Browse our showcase of exceptional documentation sites.
+  Star us on GitHub and contribute to the project
 </Card>

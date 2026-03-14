@@ -1,0 +1,394 @@
+---
+title: Environment Variables
+description: Complete environment variable reference for configuring Walty
+---
+
+## Overview
+
+Walty uses environment variables for configuration. Copy `.env.example` to `.env` and configure the variables according to your deployment needs.
+
+```bash
+cp .env.example .env
+```
+
+<Warning>
+Never commit the `.env` file to version control. It contains sensitive secrets and API keys.
+</Warning>
+
+## Required Variables
+
+The application will not function without these variables properly configured.
+
+### DATABASE_URL
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL database connection string.
+
+  **Docker Compose (recommended):**
+  ```bash
+  DATABASE_URL=postgresql://wallet:wallet@db:5432/wallet
+  ```
+
+  **Local development (outside Docker):**
+  ```bash
+  DATABASE_URL=postgresql://wallet:wallet@localhost:5432/wallet
+  ```
+
+  **Managed database service:**
+  ```bash
+  DATABASE_URL=postgresql://user:password@your-host.com:5432/database
+  ```
+
+  <Note>
+  When using Docker Compose, use `db` as the hostname. This matches the service name in `docker-compose.yml`.
+  </Note>
+</ParamField>
+
+### JWT_SECRET
+
+<ParamField path="JWT_SECRET" type="string" required>
+  Secret key used to sign and verify JSON Web Tokens for user authentication.
+
+  **Generate a secure secret:**
+  ```bash
+  openssl rand -base64 32
+  ```
+
+  <Warning>
+  This secret must be:
+  - Cryptographically random (32+ bytes)
+  - Unique per deployment
+  - Never shared or committed to version control
+  - Changed immediately if compromised
+
+  Changing this secret will invalidate all existing user sessions.
+  </Warning>
+</ParamField>
+
+### SERVER_PEPPER
+
+<ParamField path="SERVER_PEPPER" type="string" required>
+  HMAC key used for deriving the PIN challenge in server-side wallet backup encryption.
+
+  **Generate a secure secret:**
+  ```bash
+  openssl rand -base64 32
+  ```
+
+  <Warning>
+  This is a critical security parameter:
+  - Must be cryptographically random (32+ bytes)
+  - Must remain constant after initial deployment
+  - Changing this will break existing wallet backups
+  - Store securely and back up separately
+
+  **Never change this value after users have created wallets.**
+  </Warning>
+</ParamField>
+
+### ALCHEMY_API_KEY
+
+<ParamField path="ALCHEMY_API_KEY" type="string" required>
+  Alchemy API key for multichain RPC access (Ethereum, Arbitrum, Base, Optimism, Polygon).
+
+  **Get a free key:** https://www.alchemy.com/
+
+  <Warning>
+  Without this key, balance queries and transaction fetching will fail. Public RPC endpoints are unreliable and rate-limited, making them unsuitable for production use.
+  </Warning>
+
+  Alchemy provides:
+  - Reliable, fast RPC access
+  - Higher rate limits than public endpoints
+  - Enhanced API features
+  - Multi-chain support
+</ParamField>
+
+### ZEROX_API_KEY
+
+<ParamField path="ZEROX_API_KEY" type="string" required>
+  0x API key for token swap functionality.
+
+  **Get a free key:** https://0x.org/docs/api
+
+  <Warning>
+  Without this key, all swap operations will fail with 401 Unauthorized errors.
+  </Warning>
+
+  0x provides:
+  - Aggregated liquidity from multiple DEXs
+  - Best price execution
+  - Gas-optimized swap routes
+</ParamField>
+
+### PAYMENTS_RECONCILE_SECRET
+
+<ParamField path="PAYMENTS_RECONCILE_SECRET" type="string" required>
+  Secret key used to authenticate requests to the internal payment reconciliation endpoint.
+
+  **Generate a secure secret:**
+  ```bash
+  openssl rand -base64 32
+  ```
+
+  This secret must be sent by external cron jobs in the `x-reconcile-secret` HTTP header when calling the reconciliation endpoint.
+
+  **Example cron configuration:**
+  ```bash
+  # Run every hour
+  0 * * * * curl -X POST https://your-instance.com/api/reconcile \
+    -H "x-reconcile-secret: YOUR_PAYMENTS_RECONCILE_SECRET" \
+    -H "Content-Type: application/json"
+  ```
+
+  <Note>
+  The reconciliation endpoint is used to verify and update payment statuses. Configure an external cron job to trigger it regularly.
+  </Note>
+</ParamField>
+
+## Optional Variables
+
+These variables enhance functionality but the application will gracefully degrade if they're missing.
+
+### ANKR_API_KEY
+
+<ParamField path="ANKR_API_KEY" type="string">
+  Ankr API key for multichain RPC access (used as a fallback between Alchemy and public endpoints).
+
+  **Get a key:** https://www.ankr.com/rpc/
+
+  Without this key:
+  - Ankr endpoints are skipped
+  - The app falls back to free public RPC endpoints
+  - May experience rate limiting
+
+  Ankr provides an additional layer of redundancy for RPC calls.
+</ParamField>
+
+### ONEINCH_API_KEY
+
+<ParamField path="ONEINCH_API_KEY" type="string">
+  1inch API key for swap functionality (used as a fallback to 0x).
+
+  **Get a key:** https://portal.1inch.dev/
+
+  Without this key:
+  - Only 0x is used for swaps
+  - No fallback if 0x is unavailable
+
+  1inch provides:
+  - Alternative swap routing
+  - Redundancy if 0x is down
+  - Potentially better prices on certain pairs
+</ParamField>
+
+### COINGECKO_API_KEY
+
+<ParamField path="COINGECKO_API_KEY" type="string">
+  CoinGecko API key for token prices and images.
+
+  **Get a key:** https://www.coingecko.com/en/api
+
+  Without this key:
+  - The app still functions
+  - Subject to stricter rate limits (free tier)
+  - May experience throttling during high usage
+
+  A paid CoinGecko API key provides:
+  - Higher rate limits
+  - More reliable pricing data
+  - Better performance under load
+</ParamField>
+
+### COINGECKO_API_BASE_URL
+
+<ParamField path="COINGECKO_API_BASE_URL" type="string" default="https://api.coingecko.com/api/v3">
+  Override the base URL for CoinGecko API calls.
+
+  **Default value:**
+  ```bash
+  COINGECKO_API_BASE_URL=https://api.coingecko.com/api/v3
+  ```
+
+  This is rarely needed unless:
+  - Using a CoinGecko proxy
+  - Testing against a mock API
+  - Using a regional endpoint
+</ParamField>
+
+### COOKIE_SECURE
+
+<ParamField path="COOKIE_SECURE" type="boolean">
+  Force the Secure flag on JWT cookies.
+
+  **Values:**
+  - `true` - Always set Secure flag (requires HTTPS)
+  - Not set - Automatically applied in production (`NODE_ENV=production`)
+
+  ```bash
+  COOKIE_SECURE=true
+  ```
+
+  <Note>
+  Use this for local HTTPS development. In production with `NODE_ENV=production`, the Secure flag is automatically enabled.
+  </Note>
+
+  <Warning>
+  Setting this to `true` requires HTTPS. The application will not work over HTTP with this flag enabled.
+  </Warning>
+</ParamField>
+
+## Automatic Variables
+
+These variables are set automatically by the runtime environment.
+
+### NODE_ENV
+
+<ParamField path="NODE_ENV" type="string" default="development">
+  Node.js environment mode.
+
+  **Possible values:**
+  - `development` - Development mode with hot reloading
+  - `production` - Production mode with optimizations
+
+  This is automatically set by:
+  - `pnpm dev` → `development`
+  - `pnpm build && pnpm start` → `production`
+  - Docker Compose → `production` (via `CI=true`)
+
+  <Note>
+  You typically don't need to set this manually. The build and runtime scripts handle it automatically.
+  </Note>
+</ParamField>
+
+### CI
+
+<ParamField path="CI" type="boolean">
+  Indicates the app is running in a CI/CD or production environment.
+
+  Set in `docker-compose.yml`:
+  ```yaml
+  environment:
+    - CI=true
+  ```
+
+  This enables production optimizations and sets `NODE_ENV=production`.
+</ParamField>
+
+## Reserved Variables
+
+### NEXT_PUBLIC_RPC_URL
+
+<ParamField path="NEXT_PUBLIC_RPC_URL" type="string">
+  Reserved for future use. Not currently used by the application.
+</ParamField>
+
+## Security Notes
+
+<Warning>
+**Critical security practices:**
+
+1. **Never commit `.env` files to version control**
+   - Add `.env` to `.gitignore`
+   - Use `.env.example` as a template only
+
+2. **Generate strong secrets**
+   - Use `openssl rand -base64 32` for all secrets
+   - Never use default or example values in production
+
+3. **Rotate secrets regularly**
+   - Establish a secret rotation policy
+   - Update secrets if compromise is suspected
+   - Note: Changing `SERVER_PEPPER` breaks wallet backups
+
+4. **Secure API keys**
+   - Use environment-specific keys (dev vs. production)
+   - Monitor API usage for anomalies
+   - Revoke and rotate if exposed
+
+5. **Database credentials**
+   - Use strong passwords
+   - Don't expose database ports publicly
+   - Enable SSL for database connections in production
+</Warning>
+
+## Configuration Examples
+
+### Development Setup
+
+```bash .env
+# Database (Docker Compose)
+DATABASE_URL=postgresql://wallet:wallet@db:5432/wallet
+
+# Secrets (generate new ones!)
+JWT_SECRET=dev-jwt-secret-change-in-production
+SERVER_PEPPER=dev-pepper-change-in-production
+PAYMENTS_RECONCILE_SECRET=dev-reconcile-secret
+
+# API Keys (get free tier keys)
+ALCHEMY_API_KEY=your-alchemy-key
+ZEROX_API_KEY=your-0x-key
+COINGECKO_API_KEY=  # Optional for dev
+```
+
+### Production Setup
+
+```bash .env
+# Database (managed service)
+DATABASE_URL=postgresql://user:strong-password@db.example.com:5432/walty
+
+# Secrets (generated with openssl)
+JWT_SECRET=<output-of-openssl-rand-base64-32>
+SERVER_PEPPER=<output-of-openssl-rand-base64-32>
+PAYMENTS_RECONCILE_SECRET=<output-of-openssl-rand-base64-32>
+
+# Required API Keys
+ALCHEMY_API_KEY=your-production-alchemy-key
+ZEROX_API_KEY=your-production-0x-key
+
+# Optional API Keys (recommended)
+ANKR_API_KEY=your-ankr-key
+ONEINCH_API_KEY=your-1inch-key
+COINGECKO_API_KEY=your-coingecko-pro-key
+```
+
+## Validation
+
+Verify your environment configuration:
+
+```bash
+# Check required variables are set
+docker-compose exec app sh -c 'env | grep -E "DATABASE_URL|JWT_SECRET|SERVER_PEPPER|ALCHEMY_API_KEY|ZEROX_API_KEY"'
+
+# Test database connectivity
+docker-compose exec app node -e "const{Client}=require('pg');new Client({connectionString:process.env.DATABASE_URL}).connect().then(()=>console.log('✓ DB connected')).catch(e=>console.error('✗ DB error:',e.message))"
+```
+
+## Troubleshooting
+
+### Missing Required Variables
+
+If you see errors about missing environment variables:
+
+1. Ensure `.env` file exists in the project root
+2. Verify all required variables are set
+3. Check for typos in variable names
+4. Restart Docker Compose: `docker-compose restart`
+
+### Invalid API Keys
+
+If API calls fail with 401/403 errors:
+
+1. Verify API keys are valid and active
+2. Check API key quotas and rate limits
+3. Ensure keys are from the correct environment (dev/prod)
+4. Review API provider dashboards for issues
+
+### Database Connection Issues
+
+If the app can't connect to the database:
+
+1. Verify `DATABASE_URL` format is correct
+2. Check database is running: `docker-compose ps db`
+3. Test connectivity: `docker-compose exec app ping db`
+4. Review database logs: `docker-compose logs db`

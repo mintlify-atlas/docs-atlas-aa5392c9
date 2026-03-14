@@ -1,0 +1,634 @@
+---
+title: Docker Setup
+description: Docker and Docker Compose configuration for running Walty in containers
+---
+
+## Overview
+
+Walty provides Docker and Docker Compose configurations for easy deployment. The setup includes:
+
+- **app** service: Next.js application (Node.js 20)
+- **db** service: PostgreSQL 16 database
+- Automatic database migrations on startup
+- Volume persistence for database data
+
+## Quick Start
+
+<Steps>
+  <Step title="Install Docker">
+    Ensure Docker and Docker Compose are installed:
+
+    ```bash
+    docker --version
+    docker-compose --version
+    ```
+
+    Download from: https://docs.docker.com/get-docker/
+  </Step>
+
+  <Step title="Configure environment">
+    ```bash
+    cp .env.example .env
+    ```
+
+    Edit `.env` with your configuration. See [Environment Variables](/self-hosting/environment) for details.
+  </Step>
+
+  <Step title="Start services">
+    ```bash
+    docker-compose up -d
+    ```
+
+    This will:
+    - Build the application image
+    - Pull PostgreSQL 16 image
+    - Start both services
+    - Run migrations automatically
+  </Step>
+
+  <Step title="Verify">
+    ```bash
+    docker-compose ps
+    docker-compose logs -f app
+    ```
+
+    Access the application at http://localhost:3000
+  </Step>
+</Steps>
+
+## Docker Configuration
+
+### Dockerfile
+
+The production Dockerfile uses a multi-stage build optimized for Next.js:
+
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml* ./
+
+RUN corepack enable && pnpm install --frozen-lockfile
+
+COPY . .
+
+RUN pnpm build
+
+EXPOSE 3000
+
+RUN chmod +x entrypoint.sh
+
+CMD ["./entrypoint.sh"]
+```
+
+**Key features:**
+- Based on `node:20-alpine` (lightweight)
+- Uses pnpm with `--frozen-lockfile` for reproducible builds
+- Builds the Next.js application
+- Exposes port 3000
+- Uses custom entrypoint for database migrations
+
+### Entrypoint Script
+
+The `entrypoint.sh` script handles initialization:
+
+```bash
+#!/bin/sh
+set -e
+
+echo "Waiting for database..."
+
+# Wait for database to be ready
+until node -e "
+  const { Client } = require('pg');
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  client.connect()
+    .then(() => client.query('SELECT 1'))
+    .then(() => client.end())
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
+"; do
+  sleep 1
+done
+
+echo "Running DB migrations..."
+if pnpm drizzle-kit push; then
+  echo "✓ Database schema synchronized"
+  echo "Database ready"
+else
+  echo "✗ Migration failed"
+  exit 1
+fi
+
+echo "Starting app..."
+exec pnpm start
+```
+
+**Initialization process:**
+
+<Steps>
+  <Step title="Database wait">
+    Polls PostgreSQL until it's ready to accept connections
+  </Step>
+
+  <Step title="Run migrations">
+    Executes `pnpm drizzle-kit push` to synchronize database schema
+  </Step>
+
+  <Step title="Start application">
+    Launches the Next.js production server with `pnpm start`
+  </Step>
+</Steps>
+
+<Note>
+Migrations run automatically on every container start, ensuring the database schema is always up-to-date.
+</Note>
+
+## Docker Compose Configuration
+
+### Production (docker-compose.yml)
+
+```yaml
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    environment:
+      - CI=true
+
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: wallet
+      POSTGRES_DB: wallet
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+#### App Service
+
+<ParamField path="build" type="string">
+  Builds the image from the Dockerfile in the current directory.
+</ParamField>
+
+<ParamField path="ports" type="array">
+  Maps port 3000 from the container to port 3000 on the host.
+
+  Access the app at: `http://localhost:3000`
+</ParamField>
+
+<ParamField path="env_file" type="array">
+  Loads environment variables from `.env` file.
+
+  See [Environment Variables](/self-hosting/environment) for configuration options.
+</ParamField>
+
+<ParamField path="depends_on" type="array">
+  Ensures the database service starts before the app service.
+
+  <Note>
+  The entrypoint script also waits for the database to be ready before running migrations.
+  </Note>
+</ParamField>
+
+<ParamField path="environment" type="object">
+  Sets `CI=true` to enable production mode (`NODE_ENV=production`).
+</ParamField>
+
+#### Database Service
+
+<ParamField path="image" type="string">
+  Uses the official PostgreSQL 16 image from Docker Hub.
+</ParamField>
+
+<ParamField path="restart" type="string">
+  `always` - Automatically restarts the container if it stops.
+</ParamField>
+
+<ParamField path="environment" type="object">
+  PostgreSQL configuration:
+  - `POSTGRES_USER: wallet` - Database username
+  - `POSTGRES_PASSWORD: wallet` - Database password
+  - `POSTGRES_DB: wallet` - Database name
+
+  <Warning>
+  Change `POSTGRES_PASSWORD` in production. Update `DATABASE_URL` in `.env` accordingly.
+  </Warning>
+</ParamField>
+
+<ParamField path="ports" type="array">
+  Maps PostgreSQL port 5432 to the host.
+
+  <Note>
+  In production, consider removing this port mapping to prevent external access. The app service can connect via Docker's internal network.
+  </Note>
+</ParamField>
+
+<ParamField path="volumes" type="array">
+  Persists database data in a named volume `postgres_data`.
+
+  Data survives container restarts and removals.
+</ParamField>
+
+### Development (compose.dev.yml)
+
+For local development outside Docker:
+
+```yaml
+name: walty_dev
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: wallet
+      POSTGRES_DB: wallet
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d wallet"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+```
+
+**Key differences:**
+
+- Only runs the database service
+- Includes health checks
+- App runs on host via `pnpm dev`
+
+**Usage:**
+
+```bash
+# Start database only
+docker-compose -f compose.dev.yml up -d
+
+# Run app on host
+pnpm dev
+```
+
+Update `DATABASE_URL` in `.env` for local development:
+
+```bash
+DATABASE_URL=postgresql://wallet:wallet@localhost:5432/wallet
+```
+
+## Common Operations
+
+### Start Services
+
+```bash
+# Start in background
+docker-compose up -d
+
+# Start with logs
+docker-compose up
+
+# Rebuild and start
+docker-compose up --build -d
+```
+
+### Stop Services
+
+```bash
+# Stop containers (keeps data)
+docker-compose stop
+
+# Stop and remove containers (keeps volumes)
+docker-compose down
+
+# Remove containers and volumes (deletes data)
+docker-compose down -v
+```
+
+<Warning>
+`docker-compose down -v` will delete all database data. Use with caution!
+</Warning>
+
+### View Logs
+
+```bash
+# All services
+docker-compose logs
+
+# Specific service
+docker-compose logs app
+docker-compose logs db
+
+# Follow logs (real-time)
+docker-compose logs -f app
+
+# Last 100 lines
+docker-compose logs --tail=100 app
+```
+
+### Execute Commands
+
+```bash
+# Open shell in app container
+docker-compose exec app sh
+
+# Run pnpm commands
+docker-compose exec app pnpm install
+docker-compose exec app pnpm build
+
+# Access database
+docker-compose exec db psql -U wallet -d wallet
+```
+
+### Restart Services
+
+```bash
+# Restart all services
+docker-compose restart
+
+# Restart specific service
+docker-compose restart app
+```
+
+## Database Management
+
+### Manual Migrations
+
+Migrations run automatically, but you can trigger them manually:
+
+```bash
+# Run migrations
+docker-compose exec app pnpm drizzle-kit push
+
+# Generate migration files
+docker-compose exec app pnpm drizzle-kit generate
+```
+
+### Database Backup
+
+```bash
+# Create backup
+docker-compose exec db pg_dump -U wallet wallet > backup.sql
+
+# Create compressed backup
+docker-compose exec db pg_dump -U wallet wallet | gzip > backup.sql.gz
+
+# Backup with timestamp
+docker-compose exec db pg_dump -U wallet wallet > backup-$(date +%Y%m%d-%H%M%S).sql
+```
+
+### Database Restore
+
+```bash
+# Restore from backup
+docker-compose exec -T db psql -U wallet wallet < backup.sql
+
+# Restore from compressed backup
+gunzip -c backup.sql.gz | docker-compose exec -T db psql -U wallet wallet
+```
+
+<Warning>
+Restore operations will overwrite existing data. Ensure you have a backup before restoring.
+</Warning>
+
+### Database Reset
+
+```bash
+# Stop services
+docker-compose down
+
+# Remove database volume
+docker volume rm walty_postgres_data
+
+# Start services (creates fresh database)
+docker-compose up -d
+```
+
+## Volumes and Data Persistence
+
+### List Volumes
+
+```bash
+docker volume ls | grep walty
+```
+
+### Inspect Volume
+
+```bash
+docker volume inspect walty_postgres_data
+```
+
+### Backup Volume
+
+```bash
+# Create volume backup
+docker run --rm \
+  -v walty_postgres_data:/data \
+  -v $(pwd):/backup \
+  alpine tar czf /backup/postgres_data_backup.tar.gz -C /data .
+```
+
+### Restore Volume
+
+```bash
+# Stop services
+docker-compose down
+
+# Restore volume
+docker run --rm \
+  -v walty_postgres_data:/data \
+  -v $(pwd):/backup \
+  alpine tar xzf /backup/postgres_data_backup.tar.gz -C /data
+
+# Start services
+docker-compose up -d
+```
+
+## Production Optimizations
+
+### Security Hardening
+
+1. **Remove database port exposure:**
+
+```yaml docker-compose.yml
+db:
+  image: postgres:16
+  # Remove ports section - app connects via internal network
+  # ports:
+  #   - "5432:5432"
+```
+
+2. **Use secrets for sensitive data:**
+
+```yaml docker-compose.yml
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+```
+
+3. **Run as non-root user:**
+
+Add to Dockerfile:
+
+```dockerfile
+USER node
+```
+
+### Resource Limits
+
+Limit container resources:
+
+```yaml docker-compose.yml
+services:
+  app:
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  db:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+```
+
+### Health Checks
+
+Add health checks for monitoring:
+
+```yaml docker-compose.yml
+services:
+  app:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d wallet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+```
+
+## Troubleshooting
+
+### Container Won't Start
+
+```bash
+# Check container status
+docker-compose ps
+
+# View logs
+docker-compose logs app
+
+# Inspect container
+docker-compose inspect app
+```
+
+### Port Already in Use
+
+If port 3000 or 5432 is already in use:
+
+```yaml docker-compose.yml
+services:
+  app:
+    ports:
+      - "3001:3000"  # Map to different host port
+
+  db:
+    ports:
+      - "5433:5432"  # Map to different host port
+```
+
+Update `DATABASE_URL` if changing database port.
+
+### Migration Failures
+
+```bash
+# View detailed logs
+docker-compose logs app | grep -A 10 "Running DB migrations"
+
+# Run migrations manually
+docker-compose exec app pnpm drizzle-kit push
+
+# Reset database if needed
+docker-compose down -v
+docker-compose up -d
+```
+
+### Out of Memory
+
+Increase Docker memory limit:
+
+- **Docker Desktop:** Settings → Resources → Memory
+- **Linux:** Edit `/etc/docker/daemon.json`
+
+```json
+{
+  "default-ulimits": {
+    "memlock": {
+      "Hard": -1,
+      "Soft": -1
+    }
+  }
+}
+```
+
+### Build Failures
+
+```bash
+# Clear build cache
+docker-compose build --no-cache
+
+# Remove old images
+docker image prune -a
+
+# Rebuild from scratch
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+## Next Steps
+
+- Configure [Environment Variables](/self-hosting/environment)
+- Review [Deployment Best Practices](/self-hosting/deployment)
+- Set up monitoring and backups
+- Configure HTTPS with a reverse proxy

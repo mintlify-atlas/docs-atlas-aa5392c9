@@ -1,0 +1,323 @@
+---
+title: "User Profile"
+description: "Manage user profile and account information"
+---
+
+## Overview
+
+The profile API allows users to manage their username and retrieve their account information. All endpoints require authentication.
+
+---
+
+## Get User Info
+
+<ParamField path="/api/me" method="GET">
+  Returns the authenticated user's account information including user ID, email, and account type.
+</ParamField>
+
+### Authentication
+Requires valid JWT token in Authorization header or cookie.
+
+### Response
+
+<ResponseField name="user" type="object">
+  User account information
+  
+  <ResponseField name="userId" type="number">
+    Unique user ID
+  </ResponseField>
+  
+  <ResponseField name="email" type="string">
+    User's email address
+  </ResponseField>
+  
+  <ResponseField name="userType" type="string">
+    Account type: `person` or `business`
+  </ResponseField>
+</ResponseField>
+
+### Error Codes
+
+- `401` - Invalid or missing authentication token
+- `404` - User not found
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/me', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+const { user } = await response.json();
+```
+
+```json Example Response
+{
+  "user": {
+    "userId": 42,
+    "email": "user@example.com",
+    "userType": "business"
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## Get Profile Username
+
+<ParamField path="/api/profile" method="GET">
+  Retrieves the user's profile username.
+</ParamField>
+
+### Response
+
+<ResponseField name="username" type="string | null">
+  User's username, or null if not set
+</ResponseField>
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/profile', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+const { username } = await response.json();
+```
+
+```json Example Response
+{
+  "username": "merchant_shop"
+}
+```
+
+```json No Username Set
+{
+  "username": null
+}
+```
+</CodeGroup>
+
+---
+
+## Create/Update Username
+
+<ParamField path="/api/profile" method="POST">
+  Sets or updates the user's profile username. Username must be unique across all users.
+</ParamField>
+
+### Request Body
+
+<ParamField body="username" type="string" required>
+  Desired username (3-20 characters, alphanumeric and underscores only)
+</ParamField>
+
+### Username Requirements
+
+- **Length**: 3-20 characters
+- **Characters**: Lowercase letters (a-z), numbers (0-9), and underscores (_)
+- **Uniqueness**: Must not be taken by another user
+- **Format**: Automatically converted to lowercase and trimmed
+
+### Response
+
+<ResponseField name="ok" type="boolean">
+  Success indicator
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  The normalized username that was saved
+</ResponseField>
+
+### Error Codes
+
+- `400` - Invalid username format
+- `401` - Unauthorized
+- `409` - Username already taken
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/profile', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    username: "My_Cool_Shop"
+  })
+});
+
+const result = await response.json();
+```
+
+```json Success Response
+{
+  "ok": true,
+  "username": "my_cool_shop"
+}
+```
+
+```json Error: Username Taken
+{
+  "error": "Username taken"
+}
+```
+
+```json Error: Invalid Format
+{
+  "error": "Invalid username"
+}
+```
+</CodeGroup>
+
+<Note>
+  Usernames are automatically normalized to lowercase. "My_Shop" will be saved as "my_shop".
+</Note>
+
+---
+
+## Update User Type
+
+<ParamField path="/api/user/type" method="PATCH">
+  Updates the user's account type between personal and business. A new JWT token is issued with the updated userType.
+</ParamField>
+
+### Request Body
+
+<ParamField body="userType" type="string" required>
+  Account type: `person` or `business`
+</ParamField>
+
+### Response
+
+Returns a response with a new authentication cookie containing the updated userType.
+
+<ResponseField name="ok" type="boolean">
+  Success indicator
+</ResponseField>
+
+<ResponseField name="userType" type="string">
+  The updated user type
+</ResponseField>
+
+### Error Codes
+
+- `400` - Invalid userType (must be "person" or "business")
+- `401` - Unauthorized
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/user/type', {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    userType: "business"
+  })
+});
+
+const result = await response.json();
+// A new token cookie is automatically set
+```
+
+```json Success Response
+{
+  "ok": true,
+  "userType": "business"
+}
+```
+
+```json Error: Invalid Type
+{
+  "error": "invalid userType"
+}
+```
+</CodeGroup>
+
+<Warning>
+  Switching to a **business** account enables payment request creation. Switching back to **person** revokes this ability.
+</Warning>
+
+---
+
+## Account Types
+
+### Person (Default)
+
+- Can send and receive payments
+- Can manage linked addresses
+- Can manage contacts
+- **Cannot** create payment requests
+
+### Business
+
+- All person account features
+- **Can create payment requests** via `/api/payment-requests`
+- Can generate payment links and QR codes
+- Can view payment history
+
+<Note>
+  Use `/api/user/type` to switch between account types at any time.
+</Note>
+
+---
+
+## Profile Use Cases
+
+### Check User Type Before Creating Payment Request
+
+```typescript
+// Check if user is a business account
+const { user } = await fetch('/api/me').then(r => r.json());
+
+if (user.userType !== 'business') {
+  // Prompt user to upgrade to business account
+  await fetch('/api/user/type', {
+    method: 'PATCH',
+    body: JSON.stringify({ userType: 'business' })
+  });
+}
+
+// Now create payment request
+await fetch('/api/payment-requests', {
+  method: 'POST',
+  body: JSON.stringify({ ... })
+});
+```
+
+### Set Username for Payment Links
+
+```typescript
+// Set username for personalized payment links
+const { username } = await fetch('/api/profile', {
+  method: 'POST',
+  body: JSON.stringify({ username: 'coffee_shop' })
+}).then(r => r.json());
+
+// Payment links can now use: walty.app/@coffee_shop
+```
+
+### Display User Information
+
+```typescript
+// Get complete user profile
+const [meRes, profileRes] = await Promise.all([
+  fetch('/api/me'),
+  fetch('/api/profile')
+]);
+
+const { user } = await meRes.json();
+const { username } = await profileRes.json();
+
+console.log({
+  email: user.email,
+  username: username ?? 'Not set',
+  accountType: user.userType
+});
+```

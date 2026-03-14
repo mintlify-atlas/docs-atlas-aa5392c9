@@ -1,0 +1,223 @@
+---
+title: 'Get Swap Quote'
+api: 'GET /api/swap/quote'
+description: 'Get the best swap quote across multiple DEX aggregators (0x and 1inch)'
+---
+
+## Authentication
+
+This endpoint requires authentication. Include your session token in the request headers.
+
+## Query Parameters
+
+<ParamField query="sellToken" type="string" required>
+  Token address to sell (or symbol like "ETH" for native tokens)
+</ParamField>
+
+<ParamField query="buyToken" type="string" required>
+  Token address to buy (or symbol like "USDC")
+</ParamField>
+
+<ParamField query="sellAmount" type="string" required>
+  Amount to sell in smallest token units (wei for ETH, considering decimals)
+</ParamField>
+
+<ParamField query="takerAddress" type="string" required>
+  Wallet address that will execute the swap
+</ParamField>
+
+<ParamField query="chainId" type="number" default={1}>
+  Chain ID where the swap will occur (defaults to 1 for Ethereum mainnet)
+</ParamField>
+
+## Response
+
+<ResponseField name="buyAmount" type="string">
+  Amount of buy token that will be received (in smallest units)
+</ResponseField>
+
+<ResponseField name="sellAmount" type="string">
+  Amount of sell token to be sold (in smallest units)
+</ResponseField>
+
+<ResponseField name="liquidityAvailable" type="boolean">
+  Whether sufficient liquidity exists for this swap
+</ResponseField>
+
+<ResponseField name="transaction" type="object">
+  Transaction data ready to be signed and sent
+  
+  <ResponseField name="to" type="string">
+    Contract address to send the transaction to
+  </ResponseField>
+  
+  <ResponseField name="data" type="string">
+    Encoded transaction data (hex string)
+  </ResponseField>
+  
+  <ResponseField name="value" type="string">
+    ETH value to send with the transaction (in wei)
+  </ResponseField>
+  
+  <ResponseField name="gas" type="string">
+    Estimated gas limit
+  </ResponseField>
+  
+  <ResponseField name="gasPrice" type="string">
+    Gas price in wei
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="issues" type="object">
+  Potential issues that would prevent the swap
+  
+  <ResponseField name="allowance" type="object | null">
+    Token allowance issue (null if no issue)
+    
+    <ResponseField name="spender" type="string">
+      Address that needs approval
+    </ResponseField>
+    
+    <ResponseField name="currentAllowance" type="string">
+      Current allowance amount
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="balance" type="object | null">
+    Insufficient balance issue (null if no issue)
+    
+    <ResponseField name="token" type="string">
+      Token address with insufficient balance
+    </ResponseField>
+    
+    <ResponseField name="actual" type="string">
+      Actual balance
+    </ResponseField>
+    
+    <ResponseField name="expected" type="string">
+      Required balance
+    </ResponseField>
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="allowanceTarget" type="string">
+  Contract address to approve if allowance is needed
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  DEX aggregator that provided the quote: `"0x"` or `"1inch"`
+</ResponseField>
+
+## Example Request
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.walty.com/api/swap/quote?sellToken=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48&buyToken=ETH&sellAmount=1000000000&takerAddress=0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb&chainId=1" \
+  -H "Cookie: session=your_session_token"
+```
+
+```javascript JavaScript
+const params = new URLSearchParams({
+  sellToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+  buyToken: 'ETH',
+  sellAmount: '1000000000', // 1000 USDC (6 decimals)
+  takerAddress: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+  chainId: '1'
+});
+
+const response = await fetch(
+  `https://api.walty.com/api/swap/quote?${params}`,
+  {
+    headers: {
+      'Cookie': 'session=your_session_token'
+    }
+  }
+);
+const quote = await response.json();
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "buyAmount": "333333333333333333",
+  "sellAmount": "1000000000",
+  "liquidityAvailable": true,
+  "transaction": {
+    "to": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+    "data": "0x415565b0000000...",
+    "value": "0",
+    "gas": "150000",
+    "gasPrice": "30000000000"
+  },
+  "issues": {
+    "allowance": {
+      "spender": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+      "currentAllowance": "0"
+    },
+    "balance": null
+  },
+  "allowanceTarget": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+  "source": "0x"
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message
+</ResponseField>
+
+<CodeGroup>
+```json 400 Bad Request
+{
+  "error": "Missing params"
+}
+```
+
+```json 401 Unauthorized
+{
+  "error": "Unauthorized"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "error": "Insufficient liquidity"
+}
+```
+</CodeGroup>
+
+## Quote Aggregation
+
+This endpoint queries both 0x and 1inch DEX aggregators in parallel and returns the best quote based on `buyAmount` (higher is better for the user).
+
+<Note>
+  The endpoint compares quotes from multiple sources and automatically selects the one that gives you the most tokens for your trade.
+</Note>
+
+<Warning>
+  If the `issues.allowance` field is present, you must approve the token spending before executing the swap. Use the `allowanceTarget` address for the approval.
+</Warning>
+
+## Executing the Swap
+
+The returned `transaction` object contains all the data needed to execute the swap:
+
+1. If `issues.allowance` exists, first approve the token:
+   ```javascript
+   // Approve token spending
+   await tokenContract.approve(quote.allowanceTarget, quote.sellAmount);
+   ```
+
+2. Then send the transaction:
+   ```javascript
+   // Execute the swap
+   await signer.sendTransaction({
+     to: quote.transaction.to,
+     data: quote.transaction.data,
+     value: quote.transaction.value,
+     gasLimit: quote.transaction.gas
+   });
+   ```

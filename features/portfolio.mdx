@@ -1,0 +1,348 @@
+---
+title: 'Portfolio Tracking'
+description: 'Track your multi-chain token balances and portfolio value in real-time'
+---
+
+# Portfolio Tracking
+
+Walty provides unified portfolio tracking across all supported blockchain networks. View your token balances, USD values, and total portfolio worth in a single dashboard.
+
+## Portfolio Overview
+
+The portfolio dashboard displays:
+
+- **Total USD Value** - Aggregate value across all chains and tokens
+- **Token Positions** - Individual token balances with real-time prices
+- **Multi-Chain Balances** - Assets across Ethereum, Arbitrum, Base, Optimism, and Polygon
+- **Native & ERC-20 Tokens** - Both chain-native currencies (ETH, MATIC) and tokens (USDC, USDT, etc.)
+
+### Balance Card Component
+
+The main portfolio card shows your total balance with a gradient design:
+
+```tsx
+export function BalanceCard({
+  address,
+  balance,
+}: {
+  address: string | null
+  balance: string | null
+}) {
+  const { totalUsd, loading } = usePortfolio(address)
+
+  return (
+    <div className="rounded-2xl border p-6">
+      {loading ? (
+        <Spinner />
+      ) : (
+        <p className="text-4xl font-bold">
+          ${totalUsd.toLocaleString("en-US", { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+          })}
+        </p>
+      )}
+      {address && (
+        <p className="text-xs font-mono">
+          {truncateAddress(address)}
+        </p>
+      )}
+    </div>
+  )
+}
+```
+
+**Visual elements:**
+- Gradient background with custom CSS variables
+- Large USD balance display
+- Truncated wallet address (0x1234...5678)
+- Chain indicator (ETH badge)
+
+## Token Positions
+
+Each token position includes:
+
+```typescript
+export type TokenPosition = {
+  token: Token                // Token metadata (symbol, name, decimals)
+  balance: string             // Human-readable balance
+  balanceUsd: number         // USD value
+  chainId: number            // Network ID
+  imageUrl: string | null    // Token logo URL
+}
+```
+
+### Token Display
+
+Tokens are displayed with:
+
+- **Token avatar** - Logo or symbol-based placeholder
+- **Symbol and name** - e.g., "USDC" / "USD Coin"
+- **Balance** - Formatted to 4 decimal places
+- **USD value** - Real-time price conversion
+- **Network badge** - Chain identifier
+
+```tsx
+<div className="flex items-center gap-3">
+  <TokenAvatar
+    symbol={position.token.symbol}
+    imageUrl={position.imageUrl}
+    sizeClass="size-9"
+    fallbackChars={4}
+  />
+  <div>
+    <p className="font-medium">{position.token.symbol}</p>
+    <p className="text-xs text-muted-foreground">
+      {position.token.name}
+    </p>
+  </div>
+  <div className="ml-auto text-right">
+    <p className="font-mono">
+      {parseFloat(position.balance).toFixed(4)}
+    </p>
+    <p className="text-xs text-muted-foreground">
+      ${position.balanceUsd.toFixed(2)}
+    </p>
+  </div>
+</div>
+```
+
+## Multi-Chain Aggregation
+
+Walty tracks balances across 5 EVM networks:
+
+<CardGroup cols={2}>
+  <Card title="Ethereum" icon="ethereum">
+    **Chain ID:** 1  
+    **Native Token:** ETH  
+    **Explorer:** etherscan.io
+  </Card>
+  
+  <Card title="Arbitrum" icon="layer-group">
+    **Chain ID:** 42161  
+    **Native Token:** ETH  
+    **Explorer:** arbiscan.io
+  </Card>
+  
+  <Card title="Base" icon="cube">
+    **Chain ID:** 8453  
+    **Native Token:** ETH  
+    **Explorer:** basescan.org
+  </Card>
+  
+  <Card title="Optimism" icon="bolt">
+    **Chain ID:** 10  
+    **Native Token:** ETH  
+    **Explorer:** optimistic.etherscan.io
+  </Card>
+</CardGroup>
+
+<Card title="Polygon" icon="polygon">
+  **Chain ID:** 137  
+  **Native Token:** MATIC  
+  **Explorer:** polygonscan.com
+</Card>
+
+### How It Works
+
+The portfolio engine:
+
+1. **Fetches native balances** for each chain
+2. **Queries ERC-20 balances** for registered tokens
+3. **Fetches USD prices** from price feed APIs
+4. **Calculates USD values** for each position
+5. **Aggregates total portfolio value**
+
+```typescript
+// Portfolio hook usage
+const { positions, totalUsd, loading, error, refresh } = usePortfolio(address)
+
+// Example positions data
+positions = [
+  {
+    token: { symbol: "ETH", name: "Ethereum", decimals: 18, type: "native" },
+    balance: "1.2345",
+    balanceUsd: 2469.00,
+    chainId: 1,
+    imageUrl: "https://..."
+  },
+  {
+    token: { 
+      symbol: "USDC", 
+      name: "USD Coin", 
+      decimals: 6, 
+      type: "erc20",
+      address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+    },
+    balance: "500.000000",
+    balanceUsd: 500.00,
+    chainId: 1,
+    imageUrl: "https://..."
+  }
+]
+```
+
+## Real-Time Price Updates
+
+Portfolio values update automatically:
+
+- **Price feeds** - Real-time token prices from aggregated sources
+- **Auto-refresh** - Portfolio recalculates when new data arrives
+- **Manual refresh** - Users can trigger immediate update with `refresh()` function
+
+<Info>
+  Prices are fetched from the `/api/prices` endpoint, which aggregates data from multiple sources for accuracy.
+</Info>
+
+## Portfolio API
+
+The portfolio is fetched from the backend API:
+
+```typescript
+// API Request
+GET /api/portfolio?address=0x1234...
+
+// Response
+{
+  "positions": [
+    {
+      "token": { "symbol": "ETH", "name": "Ethereum", ... },
+      "balance": "1.2345",
+      "balanceUsd": 2469.00,
+      "chainId": 1
+    },
+    // ... more positions
+  ],
+  "totalUsd": 2969.00
+}
+```
+
+### Loading States
+
+The portfolio hook manages loading states:
+
+```tsx
+const { positions, totalUsd, loading, error } = usePortfolio(address)
+
+if (loading) {
+  return <Spinner className="size-5" />
+}
+
+if (error) {
+  return <p className="text-destructive">{error}</p>
+}
+
+return (
+  <div>
+    <h2>Total: ${totalUsd.toFixed(2)}</h2>
+    {positions.map(position => (
+      <TokenCard key={`${position.chainId}-${position.token.symbol}`} 
+                 position={position} />
+    ))}
+  </div>
+)
+```
+
+## Token Images
+
+Token logos are fetched separately and merged with position data:
+
+```typescript
+// Fetch portfolio and images in parallel
+const [portfolioRes, tokenImagesRes] = await Promise.all([
+  fetch(`/api/portfolio?address=${address}`),
+  fetch("/api/token-images")
+])
+
+// Merge image URLs into positions
+const withImages = portfolioRes.positions.map((p) => ({
+  ...p,
+  imageUrl: tokenImagesRes[p.token.symbol] ?? null,
+}))
+```
+
+**Image sources:**
+- Token registry metadata
+- Third-party token list APIs
+- Fallback to symbol-based avatars
+
+## Filtering and Search
+
+Users can filter portfolio positions:
+
+- **By chain** - Show only tokens on selected network
+- **By token name** - Search by symbol or name
+- **By balance** - Hide dust balances (< $1)
+
+```typescript
+// Filter positions by chain
+const chainPositions = positions.filter(
+  (p) => p.chainId === selectedChainId
+)
+
+// Search filter
+const filteredPositions = positions.filter((position) => {
+  const searchLower = search.toLowerCase().trim()
+  const symbolMatch = position.token.symbol.toLowerCase().includes(searchLower)
+  const nameMatch = position.token.name.toLowerCase().includes(searchLower)
+  return symbolMatch || nameMatch
+})
+```
+
+## Performance Optimization
+
+Portfolio data is optimized for performance:
+
+- **Parallel RPC calls** - Fetch all chain balances simultaneously
+- **Request deduplication** - Cache token images across re-renders
+- **Incremental loading** - Show cached data while refreshing
+- **Background updates** - Auto-refresh without blocking UI
+
+```typescript
+useEffect(() => {
+  if (!address) return
+  let cancelled = false
+
+  async function load() {
+    setLoading(true)
+    
+    const [portfolioRes, tokenImagesRes] = await Promise.all([
+      fetch(`/api/portfolio?address=${address}`),
+      fetch("/api/token-images")
+    ])
+    
+    if (cancelled) return
+    
+    // Update state...
+  }
+
+  load()
+  
+  return () => { cancelled = true }
+}, [address, tick])
+```
+
+## Empty States
+
+When users have no tokens:
+
+```tsx
+{positions.length === 0 ? (
+  <div className="text-center py-8">
+    <p className="text-muted-foreground">
+      No tokens found
+    </p>
+    <p className="text-sm text-muted-foreground mt-2">
+      Receive tokens to get started
+    </p>
+  </div>
+) : (
+  // ... render positions
+)}
+```
+
+## Related Features
+
+- [Wallet Management](/features/wallet-management) - Create and secure your wallet
+- [Transactions](/features/transactions) - Send tokens from your portfolio
+- [Swaps](/features/swaps) - Exchange tokens within your portfolio

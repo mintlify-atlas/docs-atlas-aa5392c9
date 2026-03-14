@@ -1,0 +1,489 @@
+---
+title: 'Token Swaps'
+description: 'Exchange tokens with aggregated quotes, automatic approval handling, and transparent fee breakdowns'
+---
+
+# Token Swaps
+
+Walty's swap feature enables seamless token exchanges within the same blockchain using aggregated liquidity from multiple DEX protocols. Powered by 0x API, users get the best available rates with transparent fees.
+
+## How Token Swaps Work
+
+The swap flow consists of several stages:
+
+<Steps>
+  <Step title="Select Tokens">
+    Choose which token to sell and which to buy. Both must be on the same chain.
+
+    ```tsx
+    <TokenSelector
+      selectedToken={sellToken}
+      options={tokens.filter(t => t.symbol !== buyToken.symbol)}
+      onChange={handleSellTokenChange}
+    />
+    ```
+  </Step>
+
+  <Step title="Enter Amount">
+    Enter either:
+    - **Sell amount** - How much you want to sell ("sell" mode)
+    - **Buy amount** - How much you want to receive ("buy" mode)
+    
+    The other amount is calculated automatically based on current market rates.
+  </Step>
+
+  <Step title="Get Quote">
+    Walty fetches a price quote from 0x aggregator, which checks prices across multiple DEXs:
+    - Uniswap
+    - SushiSwap
+    - Curve
+    - Balancer
+    - And more...
+
+    ```typescript
+    const params = new URLSearchParams({
+      sellToken: sellToken.address ?? sellToken.symbol,
+      buyToken: buyToken.address ?? buyToken.symbol,
+      sellAmount: parseUnits(amount, sellToken.decimals).toString(),
+      chainId: String(chainId),
+    })
+
+    const res = await fetch(`/api/swap/price?${params}`)
+    const data = await res.json()
+    // { buyAmount: "1000000", sellAmount: "2000000000000000000" }
+    ```
+  </Step>
+
+  <Step title="Approve (if needed)">
+    For ERC-20 tokens, Walty automatically checks if the 0x contract has sufficient allowance. If not, an approval transaction is submitted first.
+
+    ```typescript
+    const spender = quote.issues?.allowance?.spender
+    if (spender && spender !== ZERO_ADDRESS) {
+      const approveTx = await walletClient.writeContract({
+        address: sellToken.address,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [spender, parseUnits(sellAmount, sellToken.decimals)],
+      })
+      await publicClient.waitForTransactionReceipt({ hash: approveTx })
+    }
+    ```
+  </Step>
+
+  <Step title="Execute Swap">
+    The swap transaction is broadcast to the network. Walty simulates it first to catch any errors before submission.
+
+    ```typescript
+    // Simulate first
+    await publicClient.call({
+      account: address,
+      to: tx.to,
+      data: tx.data,
+      value: BigInt(tx.value ?? "0"),
+    })
+
+    // Then broadcast
+    const hash = await walletClient.sendTransaction({
+      to: tx.to,
+      data: tx.data,
+      value: BigInt(tx.value ?? "0"),
+      gas: BigInt(tx.gas),
+    })
+    ```
+  </Step>
+
+  <Step title="Wait for Confirmation">
+    Transaction status updates in real-time:
+    - **approving** - Approval tx pending
+    - **swapping** - Swap tx pending
+    - **success** - Swap complete ✓
+    - **error** - Swap failed ✗
+  </Step>
+</Steps>
+
+## Swap Interface
+
+The swap UI consists of two token input cards with a flip button:
+
+```tsx
+export function SwapForm({
+  address,
+  password,
+  chainId,
+  onTxRecord,
+}: {
+  address: string
+  password: string
+  chainId: number
+  onTxRecord: (hash: string, to: string, amount: string) => void
+}) {
+  const tokens = getTokensByChain(chainId)
+  const [sellToken, setSellToken] = useState(tokens[0])
+  const [buyToken, setBuyToken] = useState(tokens[1])
+  const [sellAmount, setSellAmount] = useState("")
+  const [buyAmount, setBuyAmount] = useState("")
+  const [status, setStatus] = useState<SwapStatus>("idle")
+  
+  // ... implementation
+}
+```
+
+### Sell Input
+
+```tsx
+<div className="rounded-3xl border bg-muted/80 p-4">
+  <p className="text-xs font-medium text-muted-foreground">
+    You Pay
+  </p>
+  <div className="flex items-center gap-2">
+    <TokenSelector
+      selectedToken={sellToken}
+      options={sellOptions}
+      onChange={handleSellTokenChange}
+    />
+    <Input
+      type="number"
+      placeholder="0"
+      value={sellAmount}
+      onChange={(e) => handleSellAmountChange(e.target.value)}
+      className="text-right text-xl font-semibold"
+    />
+  </div>
+  <p className="text-xs text-muted-foreground">
+    Balance: {formatUnits(sellBalance, sellToken.decimals)}
+  </p>
+</div>
+```
+
+### Buy Input
+
+```tsx
+<div className="rounded-3xl border bg-muted/80 p-4">
+  <p className="text-xs font-medium text-muted-foreground">
+    You Receive
+  </p>
+  <div className="flex items-center gap-2">
+    <TokenSelector
+      selectedToken={buyToken}
+      options={buyOptions}
+      onChange={handleBuyTokenChange}
+    />
+    <Input
+      type="number"
+      placeholder="0"
+      value={isQuoting && quoteDir === "sell" ? "" : buyAmount}
+      onChange={(e) => handleBuyAmountChange(e.target.value)}
+      className="text-right text-xl font-semibold"
+    />
+    {isQuoting && quoteDir === "sell" && (
+      <Spinner className="size-3.5" />
+    )}
+  </div>
+</div>
+```
+
+### Flip Button
+
+Swap the sell and buy tokens:
+
+```tsx
+<div className="flex justify-center -my-5">
+  <Button
+    size="icon"
+    className="rounded-full size-8 z-10"
+    onClick={handleFlipTokens}
+  >
+    ⇅
+  </Button>
+</div>
+```
+
+## Quote Aggregation
+
+Walty uses two API endpoints for swaps:
+
+### Price Quote (Indicative)
+
+Fast, frequent price checks without requiring wallet address:
+
+```typescript
+GET /api/swap/price?sellToken=ETH&buyToken=USDC&sellAmount=1000000000000000000&chainId=1
+
+Response:
+{
+  "buyAmount": "2000000000",      // 2000 USDC (6 decimals)
+  "sellAmount": "1000000000000000000"  // 1 ETH (18 decimals)
+}
+```
+
+**Used for:**
+- Real-time price display
+- Calculating opposite amount
+- Fee estimation
+
+### Firm Quote (Executable)
+
+Detailed quote with transaction data for execution:
+
+```typescript
+GET /api/swap/quote?sellToken=ETH&buyToken=USDC&sellAmount=1000000000000000000&takerAddress=0x...&chainId=1
+
+Response:
+{
+  "buyAmount": "2000000000",
+  "sellAmount": "1000000000000000000",
+  "transaction": {
+    "to": "0x...",        // 0x Exchange Proxy address
+    "data": "0x...",      // Encoded swap calldata
+    "value": "0",         // ETH to send (for native swaps)
+    "gas": "250000",      // Estimated gas limit
+    "gasPrice": "20000000000"  // Gas price in wei
+  },
+  "issues": {
+    "allowance": {
+      "spender": "0x..."  // Address to approve (if ERC-20)
+    }
+  }
+}
+```
+
+**Used for:**
+- Final swap execution
+- Gas estimation
+- Approval checks
+
+## Fee Breakdown
+
+Transparent fee display shows all costs:
+
+```tsx
+<div className="rounded-2xl border bg-muted/20 p-3">
+  {/* Exchange Rate */}
+  <div className="flex justify-between">
+    <span className="text-muted-foreground">Price</span>
+    <span className="font-mono">
+      1 {sellToken.symbol} = {(buyAmt / sellAmt).toFixed(6)} {buyToken.symbol}
+    </span>
+  </div>
+
+  {/* Protocol Fee */}
+  <div className="flex justify-between">
+    <span className="text-muted-foreground">Swap Fee</span>
+    <span className="font-mono">
+      {feeInfo.feePercent.toFixed(2)}% 
+      ({feeInfo.feeAmount.toFixed(6)} {buyToken.symbol})
+    </span>
+  </div>
+
+  {/* Network Fee */}
+  <div className="flex justify-between">
+    <span className="text-muted-foreground">Network Fee</span>
+    <span className="font-mono">
+      ~${networkFeeUsd.toFixed(2)}
+    </span>
+  </div>
+</div>
+```
+
+**Fee calculation:**
+
+```typescript
+// Calculate implicit fee from price impact
+const sell = parseFloat(formatUnits(sellAmount, sellToken.decimals))
+const buy = parseFloat(formatUnits(buyAmount, buyToken.decimals))
+const midPrice = buy / sell
+const expectedBuy = sell * midPrice
+const feeAmount = expectedBuy - buy
+const feePercent = (feeAmount / expectedBuy) * 100
+```
+
+## Debounced Price Updates
+
+Prices update automatically as user types, with 500ms debounce:
+
+```typescript
+function handleSellAmountChange(value: string) {
+  setSellAmount(value)
+  schedulePriceFetch("sell", value, sellToken, buyToken)
+}
+
+function schedulePriceFetch(
+  direction: QuoteDir, 
+  amount: string, 
+  sTok: Token, 
+  bTok: Token
+) {
+  if (debounceRef.current) clearTimeout(debounceRef.current)
+
+  if (!amount || parseFloat(amount) <= 0) {
+    setPriceInfo(null)
+    return
+  }
+
+  setStatus("quoting")
+
+  debounceRef.current = setTimeout(async () => {
+    // Fetch price from API
+    const res = await fetch(`/api/swap/price?${params}`)
+    const data = await res.json()
+    
+    setPriceInfo(data)
+    setBuyAmount(formatUnits(data.buyAmount, bTok.decimals))
+    setStatus("idle")
+  }, 500)
+}
+```
+
+<Info>
+  Price quotes are indicative and may change slightly when executing the swap due to market movement.
+</Info>
+
+## Approval Handling
+
+Walty automatically manages ERC-20 token approvals:
+
+```typescript
+const erc20Abi = [
+  {
+    name: "allowance",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "approve",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const
+```
+
+**Approval flow:**
+
+1. Check if 0x contract has allowance
+2. If insufficient, show "Approving..." status
+3. Submit approve() transaction
+4. Wait for confirmation
+5. Proceed with swap
+
+<Note>
+  Native tokens (ETH, MATIC) don't require approval since they're sent directly with the transaction value.
+</Note>
+
+## Status States
+
+```typescript
+type SwapStatus = 
+  | "idle"       // Ready to swap
+  | "quoting"    // Fetching price
+  | "approving"  // Approval tx pending
+  | "swapping"   // Swap tx pending
+  | "success"    // Swap complete
+  | "error"      // Swap failed
+```
+
+**Button states:**
+
+```tsx
+let buttonLabel: string
+let buttonDisabled: boolean
+
+if (status === "approving") {
+  buttonLabel = "Approving..."
+  buttonDisabled = true
+} else if (status === "swapping") {
+  buttonLabel = "Swapping..."
+  buttonDisabled = true
+} else if (!sellAmount || parseFloat(sellAmount) <= 0) {
+  buttonLabel = "Enter amount"
+  buttonDisabled = true
+} else if (insufficientBalance) {
+  buttonLabel = "Insufficient balance"
+  buttonDisabled = true
+} else if (status === "quoting") {
+  buttonLabel = "Calculating..."
+  buttonDisabled = true
+} else {
+  buttonLabel = "Swap"
+  buttonDisabled = false
+}
+```
+
+## Network Support
+
+Swaps are available on all chains with 0x integration:
+
+```typescript
+const NETWORKS = [
+  {
+    id: 1,
+    name: "Ethereum",
+    zeroxBaseUrl: "https://api.0x.org",
+  },
+  {
+    id: 42161,
+    name: "Arbitrum",
+    zeroxBaseUrl: "https://arbitrum.api.0x.org",
+  },
+  {
+    id: 8453,
+    name: "Base",
+    zeroxBaseUrl: "https://base.api.0x.org",
+  },
+  {
+    id: 10,
+    name: "Optimism",
+    zeroxBaseUrl: "https://optimism.api.0x.org",
+  },
+  {
+    id: 137,
+    name: "Polygon",
+    zeroxBaseUrl: "https://polygon.api.0x.org",
+  },
+]
+```
+
+## Error Handling
+
+Comprehensive error messages:
+
+```tsx
+{status === "error" && swapError && (
+  <p className="text-sm text-destructive">
+    {swapError}
+  </p>
+)}
+```
+
+**Common errors:**
+- "Insufficient balance" - Not enough tokens to sell
+- "Price failed" - Quote API error
+- "Swap failed" - Transaction reverted
+- "Invalid PIN" - Decryption failed
+
+<Warning>
+  Always verify the amounts and exchange rate before confirming swaps. Blockchain transactions are irreversible.
+</Warning>
+
+## Transaction Recording
+
+Swap transactions are recorded in history:
+
+```typescript
+const buyFmt = formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
+const label = `SWAP ${sellAmount} ${sellToken.symbol} → ${parseFloat(buyFmt).toFixed(6)} ${buyToken.symbol}`
+
+onTxRecord(hash, tx.to, label)
+```
+
+## Related Features
+
+- [Portfolio](/features/portfolio) - View available tokens for swapping
+- [Transactions](/features/transactions) - Standard token transfers
+- [Wallet Management](/features/wallet-management) - Secure your swap signing keys

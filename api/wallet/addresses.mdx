@@ -1,0 +1,104 @@
+---
+title: 'Addresses'
+description: 'Retrieve linked wallet addresses'
+---
+
+## Overview
+
+The Addresses API allows you to retrieve all wallet addresses linked to the authenticated user's account.
+
+<Note>
+This endpoint requires authentication. Include a valid session token in your request headers.
+</Note>
+
+---
+
+## List Addresses
+
+<RequestExample>
+```bash cURL
+curl -X GET https://api.walty.com/api/addresses \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+```
+</RequestExample>
+
+### GET /api/addresses
+
+Retrieves all wallet addresses linked to the authenticated user's account.
+
+**Authentication:** Required
+
+**Request Body:** None
+
+**Response**
+
+<ResponseField name="addresses" type="array" required>
+  Array of address objects linked to the user
+  
+  <Expandable title="Address Object">
+    <ResponseField name="id" type="number">
+      Unique identifier for the address record
+    </ResponseField>
+    
+    <ResponseField name="userId" type="number">
+      The ID of the user who owns this address
+    </ResponseField>
+    
+    <ResponseField name="address" type="string">
+      The Ethereum wallet address (checksummed format)
+    </ResponseField>
+    
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp when the address was linked
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "addresses": [
+    {
+      "id": 1,
+      "userId": 42,
+      "address": "0x1234567890abcdef1234567890abcdef12345678",
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    },
+    {
+      "id": 2,
+      "userId": 42,
+      "address": "0xabcdef1234567890abcdef1234567890abcdef12",
+      "createdAt": "2024-01-20T14:45:00.000Z"
+    }
+  ]
+}
+```
+</ResponseExample>
+
+**Error Responses**
+
+<ResponseField name="error" type="string">
+  Error message when request fails
+</ResponseField>
+
+- `401 Unauthorized` - Authentication required or invalid session token
+  ```json
+  { "error": "Unauthorized" }
+  ```
+
+<Note>
+If the user has no linked addresses, the endpoint returns an empty array: `{ "addresses": [] }`
+</Note>
+
+---
+
+## Workflow
+
+To link a new address to a user account, use the wallet linking flow:
+
+1. Generate a nonce: `POST /api/wallet/nonce`
+2. Sign the message with the user's wallet
+3. Submit the signature: `POST /api/wallet/link`
+4. Verify the link: `GET /api/addresses`
+
+See the [Wallet API](/api/wallet/overview) documentation for details on linking addresses.

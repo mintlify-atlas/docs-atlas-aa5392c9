@@ -1,0 +1,382 @@
+---
+title: "Payment Requests"
+description: "Create and manage payment requests for accepting cryptocurrency payments"
+---
+
+## Overview
+
+Payment requests allow business accounts to generate payment links and QR codes for accepting USDC or USDT on Polygon. Each request expires after 15 minutes and is verified through blockchain transaction logs.
+
+<Note>
+  Only **business accounts** can create and manage payment requests. Personal accounts will receive a 403 error.
+</Note>
+
+---
+
+## Get Active Payment Request
+
+<ParamField path="/api/payment-requests" method="GET">
+  Returns the most recent active payment request (pending or confirming status) for the authenticated merchant.
+</ParamField>
+
+### Authentication
+Requires valid JWT token in Authorization header or cookie.
+
+### Response
+
+<ResponseField name="request" type="object | null">
+  The active payment request, or null if none exists.
+  
+  <ResponseField name="id" type="string">
+    Unique payment request identifier
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    Payment status: `pending`, `confirming`, `paid`, `expired`, or `cancelled`
+  </ResponseField>
+  
+  <ResponseField name="chainId" type="number">
+    Blockchain network ID (137 for Polygon)
+  </ResponseField>
+  
+  <ResponseField name="amountUsd" type="string">
+    Requested amount in USD
+  </ResponseField>
+  
+  <ResponseField name="tokenSymbol" type="string">
+    Token symbol: `USDC` or `USDT`
+  </ResponseField>
+  
+  <ResponseField name="merchantWalletAddress" type="string">
+    Merchant's receiving wallet address
+  </ResponseField>
+  
+  <ResponseField name="expiresAt" type="string">
+    ISO 8601 timestamp when the request expires
+  </ResponseField>
+  
+  <ResponseField name="confirmations" type="number">
+    Current number of block confirmations (requires 2 for paid status)
+  </ResponseField>
+  
+  <ResponseField name="requiredConfirmations" type="number">
+    Required confirmations (default: 2)
+  </ResponseField>
+  
+  <ResponseField name="txHash" type="string | null">
+    Transaction hash once payment is detected
+  </ResponseField>
+  
+  <ResponseField name="isSplitPayment" type="boolean">
+    Whether this request accepts partial payments from multiple payers
+  </ResponseField>
+  
+  <ResponseField name="totalPaidUsd" type="string">
+    Total amount paid (for split payments)
+  </ResponseField>
+  
+  <ResponseField name="remainingAmountUsd" type="string">
+    Remaining amount to be paid (for split payments)
+  </ResponseField>
+</ResponseField>
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/payment-requests', {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+const { request } = await response.json();
+```
+
+```json Example Response
+{
+  "request": {
+    "id": "clx1234567890",
+    "status": "pending",
+    "chainId": 137,
+    "amountUsd": "50.00",
+    "tokenSymbol": "USDC",
+    "merchantWalletAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    "expiresAt": "2026-03-14T15:30:00.000Z",
+    "confirmations": 0,
+    "requiredConfirmations": 2,
+    "txHash": null,
+    "isSplitPayment": false,
+    "totalPaidUsd": "0",
+    "remainingAmountUsd": "50.00"
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## Create Payment Request
+
+<ParamField path="/api/payment-requests" method="POST">
+  Creates a new payment request. Returns the created request with a unique ID that can be used to generate payment links.
+</ParamField>
+
+### Request Body
+
+<ParamField body="amountUsd" type="string" required>
+  Amount to request in USD (must be greater than 0)
+</ParamField>
+
+<ParamField body="token" type="string" required>
+  Token symbol: `USDC` or `USDT`
+</ParamField>
+
+<ParamField body="merchantWalletAddress" type="string" required>
+  Merchant's wallet address (must be linked to the account via `/api/addresses`)
+</ParamField>
+
+<ParamField body="isSplitPayment" type="boolean">
+  Enable split payment mode to accept partial payments from multiple payers (default: false)
+</ParamField>
+
+### Response
+
+Returns the created payment request object (same structure as GET response).
+
+### Error Codes
+
+- `400` - Invalid amount, token, or wallet address
+- `401` - Unauthorized (missing or invalid token)
+- `403` - Forbidden (user is not a business account)
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/payment-requests', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    amountUsd: "50.00",
+    token: "USDC",
+    merchantWalletAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    isSplitPayment: false
+  })
+});
+
+const request = await response.json();
+```
+
+```json Example Response
+{
+  "id": "clx1234567890",
+  "status": "pending",
+  "chainId": 137,
+  "amountUsd": "50.00",
+  "tokenSymbol": "USDC",
+  "merchantWalletAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+  "expiresAt": "2026-03-14T15:30:00.000Z",
+  "confirmations": 0,
+  "requiredConfirmations": 2,
+  "txHash": null,
+  "isSplitPayment": false,
+  "totalPaidUsd": "0",
+  "remainingAmountUsd": "50.00"
+}
+```
+</CodeGroup>
+
+<Warning>
+  The merchant wallet address must be linked to your account. Use the `/api/addresses` endpoint to link addresses first.
+</Warning>
+
+---
+
+## Cancel Payment Request
+
+<ParamField path="/api/payment-requests" method="PATCH">
+  Cancels an active payment request (pending or confirming status only).
+</ParamField>
+
+### Request Body
+
+<ParamField body="id" type="string" required>
+  Payment request ID to cancel
+</ParamField>
+
+### Response
+
+Returns the updated payment request object with status set to `cancelled`.
+
+### Error Codes
+
+- `400` - Invalid ID or request is not active (already paid/expired/cancelled)
+- `401` - Unauthorized
+- `403` - Forbidden (user is not a business account)
+- `404` - Payment request not found
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/payment-requests', {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    id: "clx1234567890"
+  })
+});
+
+const cancelled = await response.json();
+```
+</CodeGroup>
+
+---
+
+## Get Payment Request by ID
+
+<ParamField path="/api/payment-requests/{id}" method="GET">
+  Retrieves a specific payment request by ID. Includes split payment contributions if applicable.
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Payment request ID
+</ParamField>
+
+### Response
+
+Returns the payment request object. For split payments, includes a `contributions` array:
+
+<ResponseField name="contributions" type="array">
+  Array of individual payments (only for split payment requests)
+  
+  <ResponseField name="id" type="number">
+    Contribution ID
+  </ResponseField>
+  
+  <ResponseField name="txHash" type="string">
+    Transaction hash
+  </ResponseField>
+  
+  <ResponseField name="payerAddress" type="string">
+    Address that sent the payment
+  </ResponseField>
+  
+  <ResponseField name="amountToken" type="string">
+    Amount in token units
+  </ResponseField>
+  
+  <ResponseField name="amountUsd" type="string">
+    Amount in USD
+  </ResponseField>
+  
+  <ResponseField name="tokenSymbol" type="string">
+    Token symbol
+  </ResponseField>
+  
+  <ResponseField name="confirmations" type="number">
+    Block confirmations for this contribution
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    Contribution status: `pending`, `confirming`, or `confirmed`
+  </ResponseField>
+  
+  <ResponseField name="detectedAt" type="string | null">
+    ISO 8601 timestamp when detected
+  </ResponseField>
+  
+  <ResponseField name="confirmedAt" type="string | null">
+    ISO 8601 timestamp when confirmed
+  </ResponseField>
+</ResponseField>
+
+<CodeGroup>
+```typescript Example Request
+const response = await fetch('/api/payment-requests/clx1234567890');
+const paymentRequest = await response.json();
+```
+
+```json Example Response (Split Payment)
+{
+  "id": "clx1234567890",
+  "status": "pending",
+  "chainId": 137,
+  "amountUsd": "100.00",
+  "tokenSymbol": "USDC",
+  "merchantWalletAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+  "expiresAt": "2026-03-14T15:30:00.000Z",
+  "confirmations": 0,
+  "requiredConfirmations": 2,
+  "txHash": null,
+  "isSplitPayment": true,
+  "totalPaidUsd": "60.00",
+  "remainingAmountUsd": "40.00",
+  "contributions": [
+    {
+      "id": 1,
+      "paymentRequestId": "clx1234567890",
+      "txHash": "0xabc...",
+      "payerAddress": "0x123...",
+      "amountToken": "30000000",
+      "amountUsd": "30.00",
+      "tokenSymbol": "USDC",
+      "confirmations": 5,
+      "status": "confirmed",
+      "blockNumber": "12345678",
+      "detectedAt": "2026-03-14T15:20:00.000Z",
+      "confirmedAt": "2026-03-14T15:21:00.000Z",
+      "createdAt": "2026-03-14T15:20:00.000Z"
+    },
+    {
+      "id": 2,
+      "txHash": "0xdef...",
+      "payerAddress": "0x456...",
+      "amountToken": "30000000",
+      "amountUsd": "30.00",
+      "tokenSymbol": "USDC",
+      "confirmations": 1,
+      "status": "confirming",
+      "blockNumber": "12345690",
+      "detectedAt": "2026-03-14T15:22:00.000Z",
+      "confirmedAt": null,
+      "createdAt": "2026-03-14T15:22:00.000Z"
+    }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+## Payment Request Lifecycle
+
+1. **pending** - Waiting for payment
+2. **confirming** - Payment detected, waiting for confirmations (2 blocks)
+3. **paid** - Payment confirmed
+4. **expired** - Request expired (15 minutes)
+5. **cancelled** - Manually cancelled by merchant
+
+<Note>
+  Payment requests automatically expire **15 minutes** after creation. Transactions sent after expiration will not be counted.
+</Note>
+
+---
+
+## Payment Link Format
+
+Use the payment request ID to generate payment links:
+
+```
+https://walty.app/pay/{requestId}
+```
+
+The payment page displays:
+- QR code for mobile wallet apps
+- Amount and token information
+- Countdown timer
+- Real-time payment status updates

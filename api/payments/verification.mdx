@@ -1,0 +1,305 @@
+---
+title: "Payment Verification"
+description: "How Walty verifies payments through blockchain transaction logs"
+---
+
+## Overview
+
+Walty verifies payments by scanning blockchain logs for ERC-20 Transfer events to the merchant's wallet address. This process runs automatically every 30 seconds through the reconciliation system.
+
+<Note>
+  Payment verification is fully automated. No manual intervention is required.
+</Note>
+
+---
+
+## Verification Process
+
+The reconciliation system (`reconcilePendingPaymentRequests`) performs the following steps:
+
+### 1. Scan for Transfer Events
+
+For each pending payment request, the system:
+
+- Queries the blockchain for Transfer events
+- Filters by token contract address (USDC or USDT)
+- Filters by recipient (merchant wallet address)
+- Scans from `lastScannedBlock + 1` to current block
+
+<CodeGroup>
+```typescript Transfer Event ABI
+const TRANSFER_EVENT = parseAbiItem(
+  "event Transfer(address indexed from, address indexed to, uint256 value)"
+)
+```
+
+```typescript Log Query
+const logs = await client.getLogs({
+  address: request.tokenAddress,        // USDC or USDT contract
+  event: TRANSFER_EVENT,
+  args: { to: merchantWalletAddress },  // Filter by recipient
+  fromBlock: scanFromBlock,
+  toBlock: currentBlock,
+});
+```
+</CodeGroup>
+
+### 2. Validate Transfer Amount
+
+For **standard payments** (non-split):
+- Transfer amount must exactly match the requested amount
+- Only one transfer is accepted per payment request
+
+For **split payments**:
+- Any transfer amount is accepted
+- Multiple transfers are aggregated
+- Payment is complete when `totalPaidToken >= amountToken`
+
+### 3. Check Timestamp
+
+The system verifies the transaction occurred before expiration:
+
+```typescript Timestamp Validation
+const block = await client.getBlock({ blockNumber: log.blockNumber });
+const blockTimestampMs = Number(block.timestamp) * 1000;
+
+if (blockTimestampMs > request.expiresAt.getTime()) {
+  continue; // Reject late payments
+}
+```
+
+<Warning>
+  Transactions sent after the 15-minute expiration window are **not counted**, even if they match the amount.
+</Warning>
+
+### 4. Prevent Double-Claiming
+
+Before accepting a transfer, the system checks:
+
+```typescript Uniqueness Check
+// Check if this transaction is already claimed
+const claimedRequest = await db.query.paymentRequests.findFirst({
+  where: and(
+    eq(paymentRequests.txHash, log.transactionHash),
+    inArray(paymentRequests.status, ["confirming", "paid"])
+  ),
+});
+
+if (claimedRequest) continue; // Skip already claimed transactions
+```
+
+This ensures:
+- Each transaction can only fulfill one payment request
+- Split payment contributions are unique per request
+
+### 5. Update Confirmations
+
+Once a transfer is detected:
+
+```typescript Calculate Confirmations
+const confirmations = Number(currentBlock - txBlockNumber + 1n);
+const status = confirmations >= requiredConfirmations ? "paid" : "confirming";
+```
+
+- **confirming** - Payment detected, waiting for 2 confirmations
+- **paid** - Payment has 2+ confirmations
+
+---
+
+## Standard vs Split Payments
+
+### Standard Payment Flow
+
+1. Customer sends **exact amount** to merchant wallet
+2. System detects Transfer event matching `amountToken`
+3. Status updates to `confirming`
+4. After 2 blocks, status updates to `paid`
+
+### Split Payment Flow
+
+1. Multiple customers send **any amount** to merchant wallet
+2. Each transfer creates a `SplitPaymentContribution` record
+3. System aggregates `totalPaidToken` across all contributions
+4. When `totalPaidToken >= amountToken`, status updates to `paid`
+
+<CodeGroup>
+```typescript Split Payment Detection
+for (const log of logs) {
+  const transferAmountToken = log.args.value.toString();
+  const transferAmountUsd = formatUnits(
+    BigInt(transferAmountToken),
+    request.tokenDecimals
+  );
+
+  // Create contribution record
+  await db.insert(splitPaymentContributions).values({
+    paymentRequestId: request.id,
+    txHash: log.transactionHash,
+    payerAddress: log.args.from,
+    amountToken: transferAmountToken,
+    amountUsd: transferAmountUsd,
+    tokenSymbol: request.tokenSymbol,
+    confirmations,
+    status: contributionStatus,
+    blockNumber: log.blockNumber.toString(),
+    detectedAt: now,
+  });
+
+  // Update payment request totals
+  const newTotalPaidToken = currentTotalPaidToken + BigInt(transferAmountToken);
+  const isFullyPaid = newTotalPaidToken >= BigInt(request.amountToken);
+
+  await db.update(paymentRequests).set({
+    totalPaidToken: newTotalPaidToken.toString(),
+    totalPaidUsd: newTotalPaidUsd,
+    status: isFullyPaid ? "paid" : "pending",
+    paidAt: isFullyPaid ? now : null,
+  });
+}
+```
+</CodeGroup>
+
+---
+
+## Reconciliation Schedule
+
+The reconciliation process runs on a fixed interval:
+
+<ParamField query="interval" type="number">
+  **30 seconds** - Time between reconciliation runs
+</ParamField>
+
+<ParamField query="limit" type="number">
+  **100** - Maximum payment requests processed per run
+</ParamField>
+
+<CodeGroup>
+```typescript Configuration
+export const PAYMENT_RECONCILE_INTERVAL_SECONDS = 30;
+export const PAYMENT_REQUIRED_CONFIRMATIONS = 2;
+export const PAYMENT_CHAIN_ID = 137; // Polygon
+```
+</CodeGroup>
+
+---
+
+## Reconciliation Results
+
+Each reconciliation run returns:
+
+```typescript ReconcileResult
+{
+  processed: number,   // Total requests processed
+  confirming: number,  // Payments awaiting confirmations
+  detected: number,    // New payments detected
+  paid: number,        // Payments confirmed as paid
+  expired: number      // Requests marked as expired
+}
+```
+
+---
+
+## Block Confirmations
+
+Walty requires **2 block confirmations** for security:
+
+- **0-1 confirmations**: Status remains `confirming`
+- **2+ confirmations**: Status updates to `paid`
+
+On Polygon, blocks are produced every ~2 seconds, so confirmations take approximately:
+
+- 1 confirmation: ~2 seconds
+- 2 confirmations: ~4 seconds
+
+<Note>
+  The reconciliation interval (30s) means there may be a delay between reaching 2 confirmations and the status update.
+</Note>
+
+---
+
+## Payment Detection Timeline
+
+```
+Customer sends payment
+  ↓
+Transaction included in block
+  ↓ (~2 seconds)
+Block 1 confirmation
+  ↓ (~2 seconds)
+Block 2 confirmations
+  ↓ (up to 30 seconds)
+Reconciliation detects payment
+  ↓
+Status updated to "paid"
+```
+
+**Total time**: ~4-34 seconds from transaction submission to paid status
+
+---
+
+## Error Handling
+
+### Duplicate Transaction Detection
+
+If a transaction is detected that's already claimed:
+
+```typescript
+if (error.code === "23505") {
+  // PostgreSQL unique constraint violation
+  continue; // Skip this transaction
+}
+```
+
+### Failed Transactions
+
+The system checks transaction receipt status:
+
+```typescript
+if (!receipt?.blockNumber || receipt.status !== "success") {
+  continue; // Ignore failed transactions
+}
+```
+
+### Expired Requests
+
+If current time exceeds `expiresAt`:
+
+```typescript
+if (now > request.expiresAt) {
+  await db.update(paymentRequests).set({
+    status: "expired",
+    lastScannedBlock: currentBlock.toString(),
+    updatedAt: now,
+  });
+}
+```
+
+---
+
+## Implementation Reference
+
+The core verification logic is in:
+
+- **Source**: `lib/payments/reconcilePendingPaymentRequests.ts`
+- **Function**: `reconcilePendingPaymentRequests()`
+- **Invocation**: Automatic cron job every 30 seconds
+
+<CodeGroup>
+```typescript Key Functions
+// Main reconciliation function
+export async function reconcilePendingPaymentRequests(
+  options: ReconcileOptions = {}
+): Promise<ReconcileResult>
+
+// Convert DB record to API view
+export function toPaymentRequestView(
+  record: PaymentRequestRecord
+): PaymentRequestView
+
+// Check if request is still active
+export function isPaymentRequestActive(
+  request: Pick<PaymentRequestView, "status" | "expiresAt">,
+  now: number = Date.now()
+): boolean
+```
+</CodeGroup>

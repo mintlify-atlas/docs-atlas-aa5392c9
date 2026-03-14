@@ -1,0 +1,157 @@
+{
+  "projectType": "saas",
+  "projectName": "Walty",
+  "projectDescription": "Open-source self-custodial multichain EVM wallet with privacy-first design and client-side signing",
+  "theme": "palm",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/wallet-management",
+              "features/portfolio",
+              "features/transactions",
+              "features/swaps",
+              "features/payments"
+            ]
+          },
+          {
+            "group": "Self-Hosting",
+            "pages": [
+              "self-hosting/deployment",
+              "self-hosting/environment",
+              "self-hosting/docker"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/database",
+              "architecture/security"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing/getting-started",
+              "contributing/workflow",
+              "contributing/guidelines"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/introduction",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Wallet",
+            "pages": [
+              "api/wallet/overview",
+              "api/wallet/addresses",
+              "api/wallet/backup"
+            ]
+          },
+          {
+            "group": "Portfolio",
+            "pages": [
+              "api/portfolio/balances",
+              "api/portfolio/prices"
+            ]
+          },
+          {
+            "group": "Transactions",
+            "pages": [
+              "api/transactions/send",
+              "api/transactions/history",
+              "api/transactions/status"
+            ]
+          },
+          {
+            "group": "Swaps",
+            "pages": [
+              "api/swaps/quote",
+              "api/swaps/execute"
+            ]
+          },
+          {
+            "group": "Payments",
+            "pages": [
+              "api/payments/requests",
+              "api/payments/verification"
+            ]
+          },
+          {
+            "group": "User",
+            "pages": [
+              "api/user/profile",
+              "api/user/contacts"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Self-custodial wallet with 24-word seed phrases",
+    "Multi-chain support (Ethereum, Arbitrum, Base, Optimism, Polygon)",
+    "Client-side encryption and transaction signing",
+    "Portfolio tracking with real-time USD values",
+    "Token swaps with quote aggregation",
+    "Payment requests for business accounts",
+    "ENS name resolution",
+    "Multi-language support (English, Spanish)",
+    "Self-hostable with Docker"
+  ],
+  "publicApiSurface": [
+    "POST /api/auth/register",
+    "POST /api/auth/login",
+    "POST /api/auth/logout",
+    "GET /api/wallet",
+    "POST /api/wallet",
+    "GET /api/wallet/backup",
+    "POST /api/wallet/backup",
+    "GET /api/addresses",
+    "POST /api/addresses",
+    "GET /api/portfolio",
+    "GET /api/prices",
+    "POST /api/tx",
+    "GET /api/tx",
+    "POST /api/swap/quote",
+    "POST /api/swap/approve",
+    "POST /api/swap/execute",
+    "GET /api/payment-requests",
+    "POST /api/payment-requests",
+    "GET /api/payment-requests/{id}",
+    "PATCH /api/payment-requests/{id}",
+    "GET /api/contacts",
+    "POST /api/contacts",
+    "DELETE /api/contacts/{id}",
+    "GET /api/profile",
+    "PATCH /api/profile",
+    "GET /api/me",
+    "PATCH /api/user/type",
+    "GET /api/activity"
+  ]
+}
